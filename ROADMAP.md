@@ -11,7 +11,8 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 - 🟢 **P1.3** Page: Files (lead sentence, tiles, filters, search, evidence toggle, Ignore), Space (disk bar, verdict totals), About (health, settings, scans, log). Light and dark.
 - 🟢 **P1.4** Nightly scan at `SCAN_TIME`, a scan at start when the last one is old, Scan now button, `/health` 503 when stale.
 - 🟢 **P1.5** Tests: fake disk with every situation, verdict tests, plain-language tests, API contract test that also records the UI fixtures, jsdom UI bot, data fuzzer, button lint, CI with image build and Trivy.
-- 🟡 **P1.6** First real-library run on the owner's server (read-only), compare the verdicts with reality for two weeks. Gate to phase 2.
+- 🟡 **P1.6** First real-library run on the owner's server (read-only) 2026-11-11: 15,114 files, 37.6 TB, 43 s; 476 hardlinked pairs, 1 identical copy (12.5 GB), 73 pairs identical except the first megabyte (Auditarr's in-place language tags; became the "Stored twice, header differs" verdict), 77 unmatched downloads (162 GB). Compare the verdicts with reality for two weeks. Gate to phase 2.
+- 🔴 **P1.9** Phase 3 rule learned from P1.6: never relink a header-differs pair (the torrent client would put the old header back over the tagged library file); the fix there is "remove the download when seeding is done".
 - 🔴 **P1.7** Settings page (edit `RECYCLE_DAYS`, hints and dirs from the page); until then they are environment variables.
 - 🙋 **P1.8** Make the GitHub repo public when happy; the image then pulls without a token.
 

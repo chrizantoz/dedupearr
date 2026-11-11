@@ -45,7 +45,7 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   for (const f of filters) {
     $(`#chips button[data-filter=${f}]`).click(); await sleep(20);
     const shown = $$("#rows tr[id^=r-]").length;
-    const want = f === "all" ? items.length : f === "needs" ? needs : f === "fine" ? items.filter(i => !i.needs_you && !i.ignored).length : items.filter(i => i.code === f).length;
+    const want = f === "all" ? items.length : f === "needs" ? needs : f === "fine" ? items.filter(i => !i.needs_you && !i.ignored).length : f === "dups" ? items.filter(i => i.code === "DUPLICATE_COPY" || i.code === "DUPLICATE_HEADER").length : items.filter(i => i.code === f).length;
     check(`filter '${f}' shows ${want} rows`, shown === Math.min(want, 500), shown);
   }
   for (const f of $$("#tiles .tile").map(t => t.dataset.filter)) { $(`#tiles .tile[data-filter=${f}]`).click(); await sleep(10); check(`tile '${f}' selects its filter`, $("#chips button[aria-pressed=true]").dataset.filter === f, $("#chips button[aria-pressed=true]").dataset.filter); }

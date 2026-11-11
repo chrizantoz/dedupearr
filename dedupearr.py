@@ -15,6 +15,7 @@ Verdict codes (never shown raw; see LABEL and sentence()):
   LIBRARY_TWIN       two names inside the library share one file                                  wasted 0
   LINKED_SEED        the download-folder name of a REAL_COPY                                      wasted 0 (hidden under its library row)
   DUPLICATE_COPY     library file and download file are two files with identical content          wasted size
+  DUPLICATE_HEADER   same, except the first megabyte: a header edited in place on one copy (tag)   wasted size
   LOOKALIKE          same size as a library file, different content                               wasted 0
   DOWNLOAD_UNMATCHED no library file matches this download (phase 2 decides what it is)           wasted size, "to decide"
   BIN_OLD            in a recycle bin longer than RECYCLE_DAYS                                     wasted size
@@ -91,12 +92,13 @@ def human(n):
 
 # ------------------------------------------------------------------------------------------------------------ fingerprint
 def sample_hash(path, size):
-    """blake2b over the first, middle and last megabyte plus the size: cheap, catches almost every non-duplicate."""
-    h = hashlib.blake2b(digest_size=16); h.update(str(size).encode())
+    """Three blake2b hashes, 'first:middle:last' megabyte: cheap, catches almost every non-duplicate, and tells a file whose
+    header was edited in place (a language tag, a title) from a file with different content."""
+    out = []
     with open(path, "rb", buffering=0) as f:
-        for off in sorted({0, max(0, size // 2 - SAMPLE // 2), max(0, size - SAMPLE)}):
-            f.seek(off); h.update(f.read(SAMPLE))
-    return h.hexdigest()
+        for off in (0, max(0, size // 2 - SAMPLE // 2), max(0, size - SAMPLE)):
+            f.seek(off); out.append(hashlib.blake2b(f.read(SAMPLE), digest_size=12).hexdigest())
+    return ":".join(out)
 
 def full_hash(path):
     h = hashlib.blake2b(digest_size=16)
@@ -202,8 +204,11 @@ def judge(c, now):
                     how = "checksums identical" if f1 and f2 else "samples identical (full checksum skipped: over this scan's hashing budget)"
                     code, twin, ev = "DUPLICATE_COPY", l["path"], f"inodes {r['ino']} and {l['ino']}, link count {r['nlink']} and {l['nlink']}, same size {human(r['size'])}, {how}"
                     break
+                if r["size"] > 3 * SAMPLE and s1.split(":")[1:] == s2.split(":")[1:]:   # middle and end identical, only the first megabyte differs: a header edited in place
+                    code, twin, ev = "DUPLICATE_HEADER", l["path"], f"inodes {r['ino']} and {l['ino']}, same size {human(r['size'])}, middle and end identical, only the first megabyte differs (a tag or title was edited on one copy)"
+                    break
                 code, twin, ev = "LOOKALIKE", l["path"], f"same size as {friendly_title(l['path'])} ({human(r['size'])}) but the content differs"
-        verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DOWNLOAD_UNMATCHED") else 0, twin, ev)
+        verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED") else 0, twin, ev)
     # 3. everything else
     for r in rows:
         if r["path"] in verdicts: continue
@@ -227,9 +232,9 @@ def judge(c, now):
 
 # ---------------------------------------------------------------------------------------------------------- plain words
 LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": "Two names, one file", "LINKED_SEED": "Seeding name",
-         "DUPLICATE_COPY": "Stored twice", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match",
+         "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match",
          "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "OTHER": "Unsorted folder"}
-NEEDS_YOU = {"DUPLICATE_COPY", "DOWNLOAD_UNMATCHED", "BIN_OLD", "OTHER"}
+NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "BIN_OLD", "OTHER"}
 def sentence(v):
     code, size, twin = v["code"], human(v["size"]), v.get("twin")
     t = friendly_title(twin) if twin else ""
@@ -238,6 +243,7 @@ def sentence(v):
     if code == "LIBRARY_ONLY": return "One copy, in the library. Nothing to do."
     if code == "LIBRARY_TWIN": return f"Two names inside the library share one file ({t} is the other). No space wasted."
     if code == "DUPLICATE_COPY": return f"Stored twice: the library file {t} and this download are two separate files with identical content. Making them one file again would free {size}."
+    if code == "DUPLICATE_HEADER": return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. {size} to get back."
     if code == "LOOKALIKE": return f"Same size as {t} but different content, so not a duplicate. Worth a look if you expected one copy."
     if code == "DOWNLOAD_UNMATCHED": return f"Nothing in the library matches this download. It may be a leftover from an upgrade, an orphan, or something still seeding; the download-client check (phase 2) will tell. {size} to decide on."
     if code == "BIN_OLD": return f"In a recycle bin longer than your {RECYCLE_DAYS}-day rule. Emptying it would free {size}."
@@ -262,7 +268,7 @@ def state(c):
             u = shutil.disk_usage(root); disks.append({"root": root, "total": u.total, "used": u.used, "free": u.free, "total_h": human(u.total), "used_h": human(u.used), "free_h": human(u.free)})
         except OSError: disks.append({"root": root, "missing": True})
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone()
-    reclaim = bytes_by.get("DUPLICATE_COPY", 0) + bytes_by.get("BIN_OLD", 0); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0)
+    reclaim = bytes_by.get("DUPLICATE_COPY", 0) + bytes_by.get("DUPLICATE_HEADER", 0) + bytes_by.get("BIN_OLD", 0); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0)
     lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies and old recycle-bin files"
             + (f", and another {human(decide)} of downloads has no match yet" if decide else "") + ".") if last else "No scan yet. Press Scan now, or wait for the night."
     return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True,

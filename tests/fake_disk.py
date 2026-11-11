@@ -22,6 +22,10 @@ def build(root, now=None):
     # stored twice: identical content, two inodes
     p["dup_lib"] = blob(f"{root}/media/movies/Dune Part Two (2024)/Dune.Part.Two.2024.2160p.WEB-DL.mkv", 4, "dune2")
     p["dup_dl"] = blob(f"{root}/torrents/movies/Dune.Part.Two.2024.2160p.WEB-DL.mkv", 4, "dune2")
+    # stored twice, but the library copy had its header edited in place (a language tag): same size, first bytes differ
+    p["hdr_lib"] = blob(f"{root}/media/anime/Frieren/Season 01/Frieren.S01E01.1080p.BluRay.mkv", 4, "frieren1")
+    p["hdr_dl"] = blob(f"{root}/torrents/anime/Frieren.S01E01.1080p.BluRay.mkv", 4, "frieren1")
+    with open(p["hdr_lib"], "r+b") as f: f.seek(100); f.write(b"jpn-tagged-by-auditarr")
     # a download nothing matches
     p["unmatched"] = blob(f"{root}/torrents/tv/Shogun.S01E05.1080p.WEB.h264-GRP.mkv", 5, "shogun-old")   # a size no library file has
     # same size as a library file, different content
