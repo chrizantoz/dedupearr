@@ -1,0 +1,8 @@
+[tool.ruff]
+line-length = 260
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, B: bugbear (real bugs: mutable defaults, unused loop vars, except-pass), SIM1: simplifications that hide bugs
+select = ["E4", "E7", "E9", "F", "W", "B", "SIM1"]
+ignore = ["E401", "E701", "E702", "E731", "E741", "SIM105", "SIM115", "B007", "B011"]   # one-line ifs and semicolons are this codebase's style; files opened for a single read are closed by CPython at once

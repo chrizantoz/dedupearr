@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,">
 <title>Dedupearr</title>
 <style>
 :root{--bg:#0f1419;--panel:#141b22;--panel2:#0b0f14;--line:#263039;--line2:#1b232b;--fg:#e6e9ee;--fg2:#b6c0cb;--muted:#95a0ad;--strong:#f3f5f7;--accent:#38bdf8;--accent-bg:#10303f;--accent-fg:#e0f2fe;--good:#86efac;--good-bg:#0f2e1d;--warn:#fde68a;--warn-bg:#3b2f0a;--bad:#fecaca;--bad-bg:#3b1d1d;--grey:#cbd5e1;--grey-bg:#1f2937;color-scheme:dark}
@@ -63,6 +63,7 @@ pre{font-size:12px;color:var(--fg2);white-space:pre-wrap;margin:0;max-height:260
   <div class="card"><h2>Health</h2><ul class="health" id="health"></ul></div>
   <div class="card"><h2>Settings (from the environment; a settings page comes in phase 3)</h2><pre id="settings"></pre></div>
   <div class="card"><h2>Scans</h2><div class="wrap"><table style="min-width:420px"><thead><tr><th>When</th><th>Files</th><th>Scanned</th><th>Wasted</th><th>Result</th></tr></thead><tbody id="runs"></tbody></table></div></div>
+  <div class="card"><h2>Recent errors (last 24 hours)</h2><pre id="errors"></pre></div>
   <div class="card"><h2>Log</h2><pre id="log"></pre></div>
   <p class="lead" id="version"></p>
  </section>
@@ -102,7 +103,7 @@ function fmt(n){n=num(n);const u=['B','KB','MB','GB','TB','PB'];let i=0;while(n>
 async function load(){try{S=sane(await get('api/state'));draw()}catch(e){$('#status').textContent='cannot reach Dedupearr: '+e.message}}
 async function loadAbout(){try{const a=obj(await get('api/about'));$('#health').innerHTML=arr(a.health).map(h=>`<li class="${esc(str(obj(h).level))}">${esc(str(obj(h).text))}</li>`).join('')||'<li>no health information</li>';$('#settings').textContent=JSON.stringify(obj(a.settings),null,1);
  $('#runs').innerHTML=arr(a.runs).map(r=>{r=obj(r);return `<tr><td>${esc(new Date(num(r.started)*1000).toLocaleString())}</td><td>${esc(num(r.files))}</td><td>${esc(fmt(r.bytes))}</td><td>${esc(fmt(r.wasted))}</td><td>${esc(str(r.note))}</td></tr>`}).join('')||'<tr><td colspan="5" class="empty">no scans yet</td></tr>';
- $('#log').textContent=arr(a.log).map(str).join('\n');$('#version').textContent=`${str(a.app)||'Dedupearr'} ${str(a.version)} ${str(a.revision).slice(0,7)} · phase ${num(a.phase)||1} · GPL-3.0 · source: ${str(obj(a.links).source)}`}catch(e){$('#health').innerHTML=`<li class="warn">cannot load: ${esc(e.message)}</li>`}}
+ $('#errors').textContent=arr(a.errors).map(e=>{e=obj(e);return `${new Date(num(e.at)*1000).toLocaleString()}  ${str(e.text)}`}).join('\n')||'No errors in the last 24 hours.';$('#log').textContent=arr(a.log).map(str).join('\n');$('#version').textContent=`${str(a.app)||'Dedupearr'} ${str(a.version)} ${str(a.revision).slice(0,7)} · phase ${num(a.phase)||1} · GPL-3.0 · source: ${str(obj(a.links).source)}`}catch(e){$('#health').innerHTML=`<li class="warn">cannot load: ${esc(e.message)}</li>`}}
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
  if(b.dataset.tab){show(b.dataset.tab);return}
  if(b.dataset.filter){filter=b.dataset.filter;show('files');draw();return}

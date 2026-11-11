@@ -7,7 +7,11 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-11 18:23, 15 files in 0 s."
+   "text": "Last scan 2026-11-11 18:47, 15 files in 0 s."
+  },
+  {
+   "level": "ok",
+   "text": "No errors in the last 24 hours."
   },
   {
    "level": "ok",
@@ -29,8 +33,8 @@
  "runs": [
   {
    "id": 1,
-   "started": 1794439397.7877443,
-   "finished": 1794439397.8396761,
+   "started": 1794440864.3564243,
+   "finished": 1794440864.4087656,
    "files": 15,
    "bytes": 45088768,
    "wasted": 15728640,
@@ -38,9 +42,10 @@
   }
  ],
  "log": [
-  "2026-11-11 18:23:17 Dedupearr dev listening on :34731",
-  "2026-11-11 18:23:17 scan done: 15 files, 45.1 MB, 15.7 MB that can come back"
+  "2026-11-11 18:47:44 Dedupearr dev listening on :48143",
+  "2026-11-11 18:47:44 scan done: 15 files, 45.1 MB, 15.7 MB that can come back"
  ],
+ "errors": [],
  "links": {
   "source": "https://github.com/chrizantoz/dedupearr",
   "auditarr": "https://github.com/chrizantoz/auditarr"

@@ -9,11 +9,21 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: python -m py_compile dedupearr.py tests/*.py && pip install -q pyflakes && python -m pyflakes dedupearr.py tests/*.py
-      - run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py
+      - name: "code quality: compile, pyflakes, ruff"
+        run: python -m py_compile dedupearr.py tests/*.py && pip install -q pyflakes ruff && python -m pyflakes dedupearr.py tests/*.py && ruff check dedupearr.py tests
+      - name: "backend: plain language, verdicts on the fake disk, API contract (records the UI fixtures)"
+        run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py
+      - name: "robustness: random disks, chaos, performance budget, one mutant a day"
+        run: python tests/fuzz_disk.py 25 ${{ github.run_number }} && python tests/chaos.py && python tests/perf_budget.py && python tests/mutation_check.py
       - uses: actions/setup-node@v4
         with: { node-version: "24" }
-      - run: cd uibot && npm install --silent && node ui_bot.js ../ui.html fixtures && node fuzz_ui.js ../ui.html fixtures 200 ${{ github.run_number }} && python3 lint_buttons.py
+      - name: "UI bots: every button, mangled data, edge worlds, lints"
+        run: cd uibot && npm install --silent && node ui_bot.js ../ui.html fixtures && node fuzz_ui.js ../ui.html fixtures 200 ${{ github.run_number }} && python3 lint_checks.py && python3 lint_buttons.py && python3 edge_fixtures.py && for c in tidy empty huge down errors; do node ui_bot.js ../ui.html fixtures-edge/$c || exit 1; done
+      - name: "real browser: phone + desktop, personas, screenshots"
+        run: cd uibot && npx playwright install chromium-headless-shell >/dev/null && node browser_bot.js ../ui.html fixtures
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: { name: ui-screenshots, path: uibot/screens/*.png, if-no-files-found: ignore }
       - run: docker build -q -t dedupearr:ci .
       - uses: aquasecurity/trivy-action@v0.36.0
         with: { image-ref: "dedupearr:ci", severity: "CRITICAL,HIGH", ignore-unfixed: true, exit-code: "1", format: "table" }

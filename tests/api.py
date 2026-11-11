@@ -37,6 +37,7 @@ st, j4 = post("/api/unignore", {"path": item["path"]}); st, j5 = get("/api/state
 check("un-ignore brings it back", next(i for i in j5["items"] if i["path"] == item["path"])["needs_you"])
 st, j6 = post("/api/ignore", {}); check("ignore without a path is refused with a question, not a crash", st == 400 and "?" in j6["error"], (st, j6))
 st, j7 = get("/api/about"); check("about has health lines, settings without secrets, runs", st == 200 and j7["health"] and "SCAN_ROOTS" in j7["settings"] and j7["runs"], list(j7))
+check("about carries the recent errors list and a health line about them", isinstance(j7["errors"], list) and any("errors in the last 24 hours" in h["text"] for h in j7["health"]), j7["health"])
 check("about never echoes a key or password", not any(k.lower().endswith(("key", "token", "password", "secret")) for k in j7["settings"]))
 st, j8 = get("/health"); check("health after a good scan is 200", st == 200 and j8["ok"])
 try: urllib.request.urlopen(base + "/api/nothing", timeout=10); check("unknown routes answer 404", False)

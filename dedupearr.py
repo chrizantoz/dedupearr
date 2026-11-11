@@ -42,9 +42,13 @@ HASH_BUDGET_MB = int(os.environ.get("HASH_BUDGET_MB", "20000"))   # full checksu
 SCAN_TIME = os.environ.get("SCAN_TIME", "04:30")
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts", ".wmv", ".webm", ".mpg", ".mpeg", ".flv", ".iso"}
 SAMPLE = 1024 * 1024
-LOG = []
+LOG = []; ERRORS = []   # ERRORS: what went wrong, for the About page ("Recent errors") and the health line
 def log(msg):
     line = f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S} {msg}"; LOG.append(line); del LOG[:-400]; print(line, flush=True)
+def note_error(msg):
+    ERRORS.append({"at": time.time(), "text": str(msg)[:300]}); del ERRORS[:-200]; log(msg)
+def errors_recent(hours=24):
+    cut = time.time() - hours * 3600; return [e for e in ERRORS if e["at"] >= cut]
 
 # ----------------------------------------------------------------------------------------------------------------------- db
 def db():
@@ -118,7 +122,7 @@ def fingerprint(c, row, want_full, budget):
         if sample is None: sample = sample_hash(row["path"], row["size"])
         if want_full and full is None and row["size"] <= budget: full = full_hash(row["path"]); budget -= row["size"]
     except OSError as e:
-        log(f"could not read {row['path']}: {e}"); return None, None, budget
+        note_error(f"could not read {row['path']}: {e}"); return None, None, budget
     c.execute("INSERT OR REPLACE INTO fingerprint(dev,ino,size,mtime,sample,full) VALUES(?,?,?,?,?,?)", key + (sample, full))
     return sample, full, budget
 
@@ -126,12 +130,12 @@ def fingerprint(c, row, want_full, budget):
 SCANNING = {"on": False, "started": 0, "phase": "", "files": 0}
 def walk(roots):
     for root in roots:
-        if not os.path.isdir(root): log(f"scan root is not a folder: {root}"); continue
+        if not os.path.isdir(root): note_error(f"scan root is not a folder: {root}"); continue
         stack = [root]
         while stack:
             d = stack.pop()
             try: it = os.scandir(d)
-            except OSError as e: log(f"cannot list {d}: {e}"); continue
+            except OSError as e: note_error(f"cannot list {d}: {e}"); continue
             with it:
                 for e in it:
                     try:
@@ -142,7 +146,7 @@ def walk(roots):
                         st = e.stat(follow_symlinks=False)
                         if st.st_size < MIN_SIZE_MB * 1024 * 1024: continue
                         yield e.path, st
-                    except OSError as e2: log(f"cannot stat {e.path}: {e2}")
+                    except OSError as e2: note_error(f"cannot stat {e.path}: {e2}")
 
 def scan(c=None, now=None):
     """One pass: record every video file, group names that share an inode, find identical copies, judge recycle bins."""
@@ -163,7 +167,7 @@ def scan(c=None, now=None):
         c.commit(); log(f"scan done: {n} files, {human(total)}, {human(wasted)} that can come back")
         return {"files": n, "bytes": total, "wasted": wasted}
     except Exception as e:
-        log("scan failed: " + "".join(traceback.format_exception_only(type(e), e)).strip())
+        note_error("scan failed: " + "".join(traceback.format_exception_only(type(e), e)).strip())
         c.execute("INSERT INTO run(started,finished,files,bytes,wasted,note) VALUES(?,?,?,?,?,?)", (now, time.time(), 0, 0, 0, "failed: " + str(e)[:200])); c.commit()
         raise
     finally:
@@ -285,11 +289,13 @@ def about(c):
     else: health.append({"level": "ok", "text": f"Last scan {datetime.datetime.fromtimestamp(last['finished']):%Y-%m-%d %H:%M}, {last['files']} files in {int(last['finished'] - last['started'])} s."})
     for r in SCAN_ROOTS:
         if not os.path.isdir(r): health.append({"level": "warn", "text": f"Scan root {r} is not mounted or not a folder."})
+    errs = errors_recent()
+    health.append({"level": "warn", "text": f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours; the newest: {errs[-1]['text'][:120]}"} if errs else {"level": "ok", "text": "No errors in the last 24 hours."})
     health.append({"level": "ok", "text": "Phase 1 is read-only: nothing is moved, linked or deleted."})
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
                          "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME},
-            "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:],
+            "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
 
 # ------------------------------------------------------------------------------------------------------------------- http
@@ -320,7 +326,7 @@ class Handler(SimpleHTTPRequestHandler):
             finally: c.close()
             self._json(404, {"error": "not found"})
         except Exception as e:
-            log("request failed: " + str(e)); self._json(500, {"error": str(e)})
+            note_error("request failed: " + str(e)); self._json(500, {"error": str(e)})
     def do_POST(self):
         p = self.path.split("?")[0]; body = self._body()
         try:
@@ -339,7 +345,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"ok": True, "note": note})
             self._json(404, {"error": "not found"})
         except Exception as e:
-            log("request failed: " + str(e)); self._json(500, {"error": str(e)})
+            note_error("request failed: " + str(e)); self._json(500, {"error": str(e)})
 
 def serve(port=HTTP_PORT, block=True):
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)

@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>dedupearr</Name>
+  <Repository>ghcr.io/chrizantoz/dedupearr:latest</Repository>
+  <Registry>https://github.com/chrizantoz/dedupearr/pkgs/container/dedupearr</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/chrizantoz/dedupearr/issues</Support>
+  <Project>https://github.com/chrizantoz/dedupearr</Project>
+  <Overview>Dedupearr: the truth about your storage. For every video file under your media and download folders it tells you what the file is - the real copy, a hardlink that costs nothing, a second copy that wastes space, a download nothing in the library matches, or an old recycle-bin entry - with the evidence in one plain sentence. Phase 1 is read-only: it looks and tells. Companion to Auditarr.</Overview>
+  <Category>MediaApp:Video Tools:Utilities</Category>
+  <WebUI>http://[IP]:[PORT:3092]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/chrizantoz/dedupearr/main/docs/unraid-template.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/chrizantoz/dedupearr/main/docs/icon.png</Icon>
+  <ExtraParams>--read-only=false</ExtraParams>
+  <Requires>Mount the library and the download folders through ONE path (/data below), as the arr guides recommend; otherwise hardlinks cannot be seen.</Requires>
+  <Config Name="Web port" Target="3092" Default="3092" Mode="tcp" Description="" Type="Port" Display="always" Required="true" Mask="false">3092</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/dedupearr" Mode="rw" Description="database and logs" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/dedupearr</Config>
+  <Config Name="Data (library + downloads, read-only)" Target="/data" Default="/mnt/user/media" Mode="ro" Description="one share that holds both the library and the download folders" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media</Config>
+  <Config Name="SCAN_ROOTS" Target="SCAN_ROOTS" Default="/data" Mode="" Description="comma-separated folders to scan (inside /data)" Type="Variable" Display="always" Required="false" Mask="false">/data</Config>
+  <Config Name="RECYCLE_DAYS" Target="RECYCLE_DAYS" Default="30" Mode="" Description="recycle-bin files older than this are waste" Type="Variable" Display="always" Required="false" Mask="false">30</Config>
+  <Config Name="SCAN_TIME" Target="SCAN_TIME" Default="04:30" Mode="" Description="nightly scan time (container TZ)" Type="Variable" Display="always" Required="false" Mask="false">04:30</Config>
+  <Config Name="HASH_BUDGET_MB" Target="HASH_BUDGET_MB" Default="20000" Mode="" Description="full checksums per scan; beyond it duplicates are called 'very likely' from samples" Type="Variable" Display="advanced" Required="false" Mask="false">20000</Config>
+  <Config Name="TZ" Target="TZ" Default="America/Winnipeg" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">America/Winnipeg</Config>
+</Container>

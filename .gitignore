@@ -4,3 +4,5 @@ uibot/node_modules/
 uibot/package-lock.json
 *.db
 .DS_Store
+uibot/screens/
+uibot/fixtures-edge/
