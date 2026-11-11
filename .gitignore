@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+uibot/node_modules/
+uibot/package-lock.json
+*.db
+.DS_Store

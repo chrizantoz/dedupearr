@@ -1,0 +1,48 @@
+{
+ "app": "Dedupearr",
+ "tagline": "the truth about your storage",
+ "version": "dev",
+ "revision": "",
+ "phase": 1,
+ "health": [
+  {
+   "level": "ok",
+   "text": "Last scan 2026-11-11 18:05, 13 files in 0 s."
+  },
+  {
+   "level": "ok",
+   "text": "Phase 1 is read-only: nothing is moved, linked or deleted."
+  }
+ ],
+ "settings": {
+  "SCAN_ROOTS": [
+   "/data"
+  ],
+  "LIBRARY_DIRS": [],
+  "DOWNLOAD_DIRS": [],
+  "RECYCLE_DIRS": [],
+  "RECYCLE_DAYS": 30,
+  "MIN_SIZE_MB": 1,
+  "HASH_BUDGET_MB": 100,
+  "SCAN_TIME": "04:30"
+ },
+ "runs": [
+  {
+   "id": 1,
+   "started": 1794438308.611839,
+   "finished": 1794438308.6533275,
+   "files": 13,
+   "bytes": 36700160,
+   "wasted": 11534336,
+   "note": "ok"
+  }
+ ],
+ "log": [
+  "2026-11-11 18:05:08 Dedupearr dev listening on :34371",
+  "2026-11-11 18:05:08 scan done: 13 files, 36.7 MB, 11.5 MB that can come back"
+ ],
+ "links": {
+  "source": "https://github.com/chrizantoz/dedupearr",
+  "auditarr": "https://github.com/chrizantoz/auditarr"
+ }
+}

@@ -1,0 +1,13 @@
+services:
+  dedupearr:
+    image: ghcr.io/chrizantoz/dedupearr:latest
+    container_name: dedupearr
+    ports: ["3092:3092"]
+    volumes:
+      - /mnt/user/appdata/dedupearr:/config
+      - /mnt/user/media:/data:ro   # one mount holding both the library and the download folders
+    environment:
+      RECYCLE_DAYS: "30"
+      SCAN_TIME: "04:30"
+      TZ: "America/Winnipeg"
+    restart: unless-stopped

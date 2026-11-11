@@ -1,0 +1,6 @@
+{
+  "name": "dedupearr-uibot",
+  "private": true,
+  "description": "Headless bots that press every button on Dedupearr's page and feed it mangled data",
+  "dependencies": { "jsdom": "^26.1.0" }
+}
