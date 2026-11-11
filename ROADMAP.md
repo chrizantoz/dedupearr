@@ -14,7 +14,7 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 - 🟡 **P1.6** First real-library run on the owner's server (read-only) 2026-11-11: 15,114 files, 37.6 TB, 43 s; 476 hardlinked pairs, 1 identical copy (12.5 GB), 73 pairs identical except the first megabyte (Auditarr's in-place language tags; became the "Stored twice, header differs" verdict), 77 unmatched downloads (162 GB). Compare the verdicts with reality for two weeks. Gate to phase 2.
 - 🔴 **P1.9** Phase 3 rule learned from P1.6: never relink a header-differs pair (the torrent client would put the old header back over the tagged library file); the fix there is "remove the download when seeding is done".
 - 🔴 **P1.7** Settings page (edit `RECYCLE_DAYS`, hints and dirs from the page); until then they are environment variables.
-- 🟢 **P1.8** Repo made public 2026-11-11. 🙋 The GHCR package was born private and stays private until the owner flips it (package settings → Change visibility → Public); until then shinra runs a local build (`dedupearr:local`, built from the public tarball) and the Unraid template points at it. Afterwards: repoint the template at `ghcr.io/chrizantoz/dedupearr:latest`.
+- 🟢 **P1.8** Repo made public 2026-11-11; the owner flipped the GHCR package to public the same evening. The server now runs `ghcr.io/chrizantoz/dedupearr:latest` and the Unraid template points at it (the local build was removed).
 - 🟢 **P1.10** Deployed on the owner's server 2026-11-11 as container `dedupearr` (:3092, `/mnt/user/media` read-only at `/data`, config in appdata), Unraid template installed; first container scan matched the host run (15,114 files). Browser bot run against the live page.
 
 ## Phase 2 · Ask the apps
