@@ -10,11 +10,12 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 - 🟢 **P1.2** Verdicts: Real copy, Only copy, Two names one file, Seeding name, Stored twice (sample + full checksum within a budget, cached per inode), Looks alike, Download without a match, Old / recent recycle-bin file, Unsorted folder. One plain sentence and one line of evidence each.
 - 🟢 **P1.3** Page: Files (lead sentence, tiles, filters, search, evidence toggle, Ignore), Space (disk bar, verdict totals), About (health, settings, scans, log). Light and dark.
 - 🟢 **P1.4** Nightly scan at `SCAN_TIME`, a scan at start when the last one is old, Scan now button, `/health` 503 when stale.
-- 🟢 **P1.5** Tests: fake disk with every situation, verdict tests, plain-language tests, API contract test that also records the UI fixtures, jsdom UI bot, data fuzzer, button lint, CI with image build and Trivy.
+- 🟢 **P1.5** Tests, level with Auditarr (see docs/TESTING.md): ruff + pyflakes, fake disk with every situation, verdict tests, plain-language tests, API contract test that records the UI fixtures, random-disk fuzzer with invariants, chaos (unlistable/unreadable/missing/broken), mutation check (8 mutants, all caught), performance budget (60k files), jsdom UI bot, data fuzzer, five edge worlds, bot lints, real-browser bot with personas and screenshots, Trivy; errors tracked for the About page.
 - 🟡 **P1.6** First real-library run on the owner's server (read-only) 2026-11-11: 15,114 files, 37.6 TB, 43 s; 476 hardlinked pairs, 1 identical copy (12.5 GB), 73 pairs identical except the first megabyte (Auditarr's in-place language tags; became the "Stored twice, header differs" verdict), 77 unmatched downloads (162 GB). Compare the verdicts with reality for two weeks. Gate to phase 2.
 - 🔴 **P1.9** Phase 3 rule learned from P1.6: never relink a header-differs pair (the torrent client would put the old header back over the tagged library file); the fix there is "remove the download when seeding is done".
 - 🔴 **P1.7** Settings page (edit `RECYCLE_DAYS`, hints and dirs from the page); until then they are environment variables.
-- 🙋 **P1.8** Make the GitHub repo public when happy; the image then pulls without a token.
+- 🟢 **P1.8** Repo made public 2026-11-11. 🙋 The GHCR package was born private and stays private until the owner flips it (package settings → Change visibility → Public); until then shinra runs a local build (`dedupearr:local`, built from the public tarball) and the Unraid template points at it. Afterwards: repoint the template at `ghcr.io/chrizantoz/dedupearr:latest`.
+- 🟢 **P1.10** Deployed on the owner's server 2026-11-11 as container `dedupearr` (:3092, `/mnt/user/media` read-only at `/data`, config in appdata), Unraid template installed; first container scan matched the host run (15,114 files). Browser bot run against the live page.
 
 ## Phase 2 · Ask the apps
 
