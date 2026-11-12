@@ -59,6 +59,7 @@ const rawCode = /\b[A-Z]{3,}_[A-Z_]{3,}\b/;
       const before = await page.locator("#rows tr[id^=r-]").count(); const ign = page.locator("#rows button[data-ign]").first();
       if (WRITES && await ign.count()) {
         await ign.click(); await page.waitForFunction(() => /hidden|Needs you/.test(document.querySelector("#toast").textContent), null, { timeout: 10000 }).catch(() => {});
+        await page.waitForFunction(n => document.querySelectorAll("#rows tr[id^=r-]").length < n, before, { timeout: 10000 }).catch(() => {});   // the page redraws after the answer; on a live server that takes a moment
         check(`${label}: persona: Ignore removes the row from Needs a decision and says so`, (await page.locator("#rows tr[id^=r-]").count()) < before && /hidden/.test(await page.textContent("#toast")), await page.textContent("#toast"));
         if (LIVE) { await page.locator("#chips button[data-filter=all]").click(); await page.waitForTimeout(150); const un = page.locator("#rows button[data-un='1']").first(); if (await un.count()) await un.click(); }   // put it back on a live server
       } else check(`${label}: persona: rows that need a decision offer Ignore`, before === 0 || (await ign.count()) > 0);
