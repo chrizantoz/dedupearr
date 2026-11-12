@@ -32,7 +32,7 @@ The left column is the internal code (handy when searching the code or the API);
 | BIN_RECENT | in a recycle bin, within the rule | 0 |
 | OTHER | the folder name gives no hint (not library, downloads or recycle bin); set `LIBRARY_DIRS` / `DOWNLOAD_DIRS` / `RECYCLE_DIRS` | 0 |
 
-**Needs a decision** = DUPLICATE_COPY, DUPLICATE_HEADER, DOWNLOAD_UNMATCHED, BIN_OLD and OTHER. Everything else is fine and shown under *Everything fine*. Each download row also carries its client's state ("Deluge: seeding, ratio 1.31, 3 days") and a **can go now** chip when your seeding rule (`SEED_MIN_RATIO` and `SEED_MIN_DAYS`, both reached by default; `SEED_RULE=either` relaxes it) is met or nothing holds the file.
+**Needs a decision** = DUPLICATE_COPY, DUPLICATE_HEADER, DOWNLOAD_UNMATCHED, DOWNLOAD_OTHER_RELEASE, LEFTOVER, ORPHAN, BIN_OLD and OTHER. Everything else is fine and shown under *Everything fine*. Each download row also carries its client's state ("Deluge: seeding, ratio 1.31, 3 days") and a **can go now** chip when your seeding rule (`SEED_MIN_RATIO` and `SEED_MIN_DAYS`, both reached by default; `SEED_RULE=either` relaxes it) is met or nothing holds the file.
 
 ## 📄 The pages
 
