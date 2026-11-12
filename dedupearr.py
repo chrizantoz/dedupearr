@@ -54,7 +54,7 @@ def sandbox_rate_ok(ip, limit=None):
     for k in [k for k in _RATE if k[1] < minute - 1]: _RATE.pop(k, None)
     _RATE[key] = _RATE.get(key, 0) + 1; return _RATE[key] <= limit
 def _env(k, d=""): return os.environ.get(k, d).strip()
-ARRS = {a: {"url": _env(f"{a.upper()}_URL").rstrip("/"), "key": _env(f"{a.upper()}_APIKEY")} for a in ("sonarr", "radarr", "whisparr")}
+ARRS = {a: {"url": _env(f"{a.upper()}_URL").rstrip("/"), "key": _env(f"{a.upper()}_APIKEY")} for a in ("sonarr", "radarr", "whisparr", "sportarr", "lidarr")}   # every Sonarr/Radarr-shaped app with a v3 history
 CLIENTS = {"Deluge": {"url": _env("DELUGE_URL").rstrip("/"), "password": _env("DELUGE_PASSWORD")},
            "NZBGet": {"url": _env("NZBGET_URL").rstrip("/"), "user": _env("NZBGET_USER"), "password": _env("NZBGET_PASSWORD")},
            "qBittorrent": {"url": _env("QBIT_URL").rstrip("/"), "user": _env("QBIT_USER"), "password": _env("QBIT_PASSWORD")}}
@@ -395,8 +395,8 @@ def judge(c, now, ctx=None):
                 gone = not os.path.exists(ai["imported"])
                 code, twin = "LEFTOVER", twin or ai["imported"]
                 ev += f"; {ai['app'].capitalize()} imported it on {ai['when']} to {ai['imported']}" + (", and that file has since been replaced" if gone else ", which has since been rewritten (different content now)")
-            elif clients_ok and ci is None and (ARRS["sonarr"]["url"] or ARRS["radarr"]["url"]): code = "ORPHAN"; ev += "; no download client knows this file and no arr imported it"
-            elif ci and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and (ARRS["sonarr"]["url"] or ARRS["radarr"]["url"]): code = "SEEDING_ONLY"; ev += "; no arr ever imported it"
+            elif clients_ok and ci is None and any(a["url"] for a in ARRS.values()): code = "ORPHAN"; ev += "; no download client knows this file and no arr imported it"
+            elif ci and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()): code = "SEEDING_ONLY"; ev += "; no arr ever imported it"
         if ci or clients_ok: ev += "; " + client_text(ci)
         extra[r["path"]] = (ci, seeding_done(ci))
         verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN") else 0, twin, ev)

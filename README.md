@@ -120,7 +120,7 @@ Phase 1 reads its settings from the environment; the About tab shows them (never
 | `MIN_SIZE_MB` | `50` | Smaller files are not judged |
 | `HASH_BUDGET_MB` | `20000` | Full checksums per scan; beyond it duplicates are called "very likely" from samples |
 | `SCAN_TIME` | `04:30` | Nightly scan time (container TZ) |
-| `SONARR_URL`, `SONARR_APIKEY` (also `RADARR_*`, `WHISPARR_*`) | empty | Lets Dedupearr read the arr's import history: which download became which library file |
+| `SONARR_URL`, `SONARR_APIKEY` (also `RADARR_*`, `WHISPARR_*`, `SPORTARR_*`, `LIDARR_*`) | empty | Lets Dedupearr read the arr's import history: which download became which library file |
 | `DELUGE_URL`, `DELUGE_PASSWORD` | empty | Deluge web address (`http://host:8112`) and its web password |
 | `NZBGET_URL`, `NZBGET_USER`, `NZBGET_PASSWORD` | empty | NZBGet address (`http://host:6789`) and its control login |
 | `QBIT_URL`, `QBIT_USER`, `QBIT_PASSWORD` | empty | qBittorrent web address and login |

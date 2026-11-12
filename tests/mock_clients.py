@@ -18,7 +18,7 @@ def start(world, port=0, host="127.0.0.1"):
             if u.path.startswith("/qbit/api/v2/torrents/info"): return self._send([{"hash": t["id"], "name": t["name"], "save_path": t["save_path"], "state": t["state"], "ratio": t["ratio"], "seeding_time": t["seeding_time"], "category": t.get("label", ""), "progress": 1.0 if t.get("finished", True) else 0.5} for t in world.get("qbit", [])])
             if u.path.startswith("/qbit/api/v2/torrents/files"):
                 t = next((t for t in world.get("qbit", []) if t["id"] == q.get("hash", [""])[0]), None); return self._send([{"name": f, "size": 1, "progress": 1} for f in (t["files"] if t else [])])
-            for app in ("sonarr", "radarr", "whisparr"):
+            for app in ("sonarr", "radarr", "whisparr", "sportarr", "lidarr"):
                 if u.path == f"/{app}/api/v3/history":
                     if self.headers.get("X-Api-Key") != "test": return self._send({"error": "Unauthorized"}, 401)
                     recs = world.get("arr", {}).get(app, []); page = int(q.get("page", ["1"])[0]); size = int(q.get("pageSize", ["500"])[0])
