@@ -17,6 +17,7 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("holding bin moves a file that changed since the scan", 'if not f or (st.st_dev, st.st_ino, st.st_size) != (f["dev"], f["ino"], f["size"]):', 'if not f:'),
     ("holding bin purge ignores the days", 'AND at < ?", (now - HOLD_DAYS * 86400,)', 'AND at < ?", (now + 1e12,)'),
     ("Put back overwrites a new file", 'if os.path.lexists(r["orig"]): return 409', 'if False: return 409'),
+    ("failed usenet job called seeding only", 'elif ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in', 'elif False and ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in'),
 ]
 arg = sys.argv[1] if len(sys.argv) > 1 else str(datetime.date.today().timetuple().tm_yday % len(MUTANTS))
 todo = MUTANTS if arg == "all" else [MUTANTS[int(arg) % len(MUTANTS)]]

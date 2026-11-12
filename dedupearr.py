@@ -481,6 +481,9 @@ def judge(c, now, ctx=None):
                 code, twin = "LEFTOVER", twin or ai["imported"]
                 ev += f"; {ai['app'].capitalize()} imported it on {ai['when']} to {ai['imported']}" + (", and that file has since been replaced" if gone else ", which has since been rewritten (different content now)")
             elif clients_ok and ci is None and any(a["url"] for a in ARRS.values()): code = "ORPHAN"; ev += "; no download client knows this file and no arr imported it"
+            elif ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()):   # a finished (or failed) usenet job nobody imported holds space for nothing: to decide, never "seeding only"
+                if code == "LOOKALIKE": code, twin, ev = "DOWNLOAD_UNMATCHED", None, f"inode {r['ino']}, link count {r['nlink']}, same size as a library file but different content"
+                ev += "; no arr ever imported it, and usenet does not seed"
             elif ci and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()): code = "SEEDING_ONLY"; ev += "; no arr ever imported it"
         if ci or clients_ok: ev += "; " + client_text(ci)
         extra[r["path"]] = (ci, seeding_done(ci))
@@ -533,6 +536,9 @@ def sentence(v):
     if code == "DUPLICATE_COPY": return f"Stored twice: the library file {t} and this download are two separate files with identical content. Making them one file again would free {size}.{tail}"
     if code == "DUPLICATE_HEADER": return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. {size} to get back.{tail}"
     if code == "LOOKALIKE": return f"Same size as {t} but different content, so not a duplicate. Worth a look if you expected one copy."
+    if code == "DOWNLOAD_UNMATCHED" and ci and ci.get("client") == "NZBGet" and ci.get("finished"):
+        how = "marked it failed" if ci.get("state") == "failed" else "finished it" if ci.get("state") == "finished" else "lists it as " + str(ci.get("state") or "done").replace("/", ", ")
+        return f"A usenet download nothing in the library matches and no arr imported: NZBGet {how}. Usenet does not seed, so nothing holds it; import it if you want it, otherwise it can go. {size} to decide on."
     if code == "DOWNLOAD_UNMATCHED": return f"Nothing in the library matches this download. It may be a leftover from an upgrade, an orphan, or something still seeding; the download-client check (phase 2) will tell. {size} to decide on."
     if code == "DOWNLOAD_OTHER_RELEASE": return f"Nothing identical in the library, but it holds a different release of the same title: {t}. If that one is the keeper, this download is a leftover from an upgrade and can go once seeding is done. {size} to get back.{tail}"
     if code == "BIN_OLD": return f"In a recycle bin longer than your {RECYCLE_DAYS}-day rule. Emptying it would free {size}."

@@ -14,7 +14,7 @@ results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:240]}]"))
 r = d.scan(now=now); c = d.db(); S = d.state(c); by = {i["path"]: i for i in S["items"]}
 code = lambda k: by.get(P[k], {}).get("code")
-check("paths() of an existing fake disk equals what build() returned (the demo relies on it)", {k: v for k, v in fake_disk.paths(DATA).items()} == {k: v for k, v in P.items() if k not in ("soft", "usenet", "usenet_new")}, "")
+check("paths() of an existing fake disk equals what build() returned (the demo relies on it)", {k: v for k, v in fake_disk.paths(DATA).items()} == {k: v for k, v in P.items() if k not in ("soft", "usenet", "usenet_new", "usenet_failed", "usenet_failed2")}, "")
 check("every client and arr was read", all(v["ok"] for v in d.CLIENT_STATUS.values()) and set(d.CLIENT_STATUS) == {"Deluge", "NZBGet", "qBittorrent", "Sonarr", "Radarr"}, d.CLIENT_STATUS)
 check("identical copy seeding past the rule: Stored twice, can go now", code("dup_dl") == "DUPLICATE_COPY" and by[P["dup_dl"]]["removable"] and "can go now" in by[P["dup_dl"]]["plain"], by.get(P["dup_dl"], {}).get("plain"))
 check("header-differs copy still seeding: Stored twice, header differs, not removable, the sentence names the rule", code("hdr_dl") == "DUPLICATE_HEADER" and not by[P["hdr_dl"]]["removable"] and "still seeding" in by[P["hdr_dl"]]["plain"] and "ratio 1" in by[P["hdr_dl"]]["plain"], by.get(P["hdr_dl"], {}).get("plain", "")[-200:])
@@ -36,6 +36,11 @@ check("a same-size lookalike that no client and no arr knows = Orphan (nothing h
 check("software torrent seeding, never imported = Seeding only, not waste, not needs-you", code("soft") == "SEEDING_ONLY" and by[P["soft"]]["wasted"] == 0 and not by[P["soft"]]["needs_you"], by.get(P["soft"]))
 check("usenet download imported by Sonarr, library file gone = Leftover with 'no seeding to wait for'", code("usenet") == "LEFTOVER" and "usenet" in by[P["usenet"]]["plain"] and by[P["usenet"]]["removable"], by.get(P["usenet"], {}).get("plain"))
 check("a usenet download still in NZBGet's queue is not removable", code("usenet_new") in ("DOWNLOAD_UNMATCHED", "SEEDING_ONLY") and not by[P["usenet_new"]]["removable"], by.get(P["usenet_new"]))
+check("a failed usenet job nobody imported is never 'Seeding only': it is a download to decide on, counted in full, needs you, can go now (seen on a real server 2026-11-12)",
+      code("usenet_failed") == "DOWNLOAD_UNMATCHED" and by[P["usenet_failed"]]["wasted"] == by[P["usenet_failed"]]["size"] and by[P["usenet_failed"]]["needs_you"] and by[P["usenet_failed"]]["removable"], by.get(P["usenet_failed"]))
+check("the same, for a failed-job file whose size nothing in the library shares", code("usenet_failed2") == "DOWNLOAD_UNMATCHED" and by[P["usenet_failed2"]]["wasted"] == by[P["usenet_failed2"]]["size"] and by[P["usenet_failed2"]]["needs_you"], by.get(P["usenet_failed2"]))
+check("its sentence says usenet does not seed and that NZBGet marked it failed", "does not seed" in by[P["usenet_failed"]]["plain"] and "failed" in by[P["usenet_failed"]]["plain"] and "seeding it" not in by[P["usenet_failed"]]["plain"], by[P["usenet_failed"]]["plain"])
+check("the undecided total includes both failed usenet files", S["decide_bytes"] >= by[P["usenet_failed"]]["size"] + by[P["usenet_failed2"]]["size"], (S["decide_bytes"], by[P["usenet_failed"]]["size"]))
 check("evidence carries the client's state for every download", all("Deluge:" in i["evidence"] or "NZBGet:" in i["evidence"] or "not in any download client" in i["evidence"] for i in S["items"] if i["kind"] == "download"), [i["evidence"][-80:] for i in S["items"] if i["kind"] == "download" and "client" not in i["evidence"]][:2])
 check("the lead says how much can go right now", "can go right now" in S["lead"] and S["now_bytes"] >= by[P["dup_dl"]]["size"], S["lead"])
 check("reclaim counts leftovers and orphans, undecided counts the rest", S["reclaim_bytes"] >= by[P["unmatched"]]["size"] + by[P["dup_dl"]]["size"], (S["reclaim_bytes"], S["decide_bytes"]))

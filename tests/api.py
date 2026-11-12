@@ -10,6 +10,7 @@ _s = socket.socket(); _s.bind(("127.0.0.1", 0)); _mport = _s.getsockname()[1]; _
 _P = fake_disk.build(DATA); _P.update(mock_clients.extra_files(DATA, fake_disk.blob)); _mock = mock_clients.start(mock_clients.world_for(_P, DATA), _mport)
 os.environ.update(CLIENT_TIMEOUT="10", **mock_clients.env_for(_M))   # the recorded fixtures carry client states, so the UI bots see 'can go now'
 import dedupearr as d  # noqa: E402
+_JUDGED = len([k for k in _P if k not in ("small", "text")])   # every planted file except the one under MIN_SIZE_MB and the non-video one
 results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:220]}]"))
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
@@ -28,7 +29,7 @@ st, j = post("/api/scan"); check("scan starts from the page", st == 200 and j["o
 for _ in range(100):
     time.sleep(0.1); st, j = get("/api/state")
     if j["last_run"] and not j["scanning"]["on"]: break
-check("scan finished and the state carries items", j["last_run"] and j["last_run"]["files"] == 20 and len(j["items"]) == 20, (j["last_run"], len(j["items"])))
+check("scan finished and the state carries items", j["last_run"] and j["last_run"]["files"] == _JUDGED and len(j["items"]) == _JUDGED, (j["last_run"], len(j["items"])))
 check("the fixtures carry client states and at least one 'can go now'", any(i["client_text"] for i in j["items"]) and any(i["removable"] and i["needs_you"] for i in j["items"]))
 item = next(i for i in j["items"] if i["code"] == "DUPLICATE_COPY")
 need = {"path", "code", "label", "title", "plain", "evidence", "size", "wasted", "size_h", "wasted_h", "twin", "twin_title", "needs_you", "ignored", "kind", "client_text", "removable"}
