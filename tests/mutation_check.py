@@ -8,7 +8,8 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("identical copies never confirmed", "if s1 == s2 and (f1 is None or f2 is None or f1 == f2):", "if False and s1 == s2:"),
     ("header-differs duplicates ignored", 'if r["size"] > 3 * SAMPLE and s1.split(":")[1:] == s2.split(":")[1:]:', 'if False:'),
     ("recycle rule never expires", "old = days > RECYCLE_DAYS", "old = days > 999999"),
-    ("waste never counted", 'r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE") else 0', '0'),
+    ("waste never counted", 'r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN") else 0', '0'),
+    ("seeding rule always satisfied", 'return ci.get("ratio", 0) >= SEED_MIN_RATIO or ci.get("seeding_days", 0) >= SEED_MIN_DAYS', 'return True'),
     ("same-title leftovers never noticed", 'if same_title(k, k2):', 'if False:'),
     ("recycle bin mistaken for library", 'if any(p in RECYCLE_HINTS for p in parts): return "recycle"', 'if any(p in RECYCLE_HINTS for p in parts): return "library"'),
     ("vanished files kept forever", 'if r["path"] not in seen: c.execute("DELETE FROM verdict WHERE id=?"', 'if False: c.execute("DELETE FROM verdict WHERE id=?"'),
@@ -25,8 +26,9 @@ for name, old, new in todo:
     tmp = tempfile.mkdtemp(prefix="dedupearr-mut-")
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(tmp, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     open(os.path.join(tmp, "dedupearr.py"), "w").write(src.replace(old, new, 1))
-    p = subprocess.run([sys.executable, os.path.join(tmp, "tests", "verdicts.py")], capture_output=True, text=True, timeout=600)
-    caught = p.returncode != 0
+    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if "seeding" in name else [])
+    caught = any(subprocess.run([sys.executable, t], capture_output=True, text=True, timeout=600).returncode != 0 for t in suites)
+    p = subprocess.run([sys.executable, suites[-1]], capture_output=True, text=True, timeout=600) if not caught else subprocess.CompletedProcess([], 1, "", "")
     print(f"{'PASS' if caught else 'FAIL'} mutant '{name}': {'caught by the suite' if caught else 'SURVIVED - the suite did not notice'}  ({[l for l in p.stdout.splitlines() if l.startswith('FAIL')][:2]})")
     bad += 0 if caught else 1; shutil.rmtree(tmp, ignore_errors=True)
 print(f"\n{len(todo) - bad} of {len(todo)} mutants caught"); sys.exit(1 if bad else 0)

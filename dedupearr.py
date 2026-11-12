@@ -5,8 +5,8 @@ For every video file under your media and download folders it says what the file
 nothing, a second copy that wastes space, a download nothing in the library matches, or an old recycle-bin entry - and shows
 the evidence (inode, link count, size, checksum) in one plain sentence.
 
-Phase 1 (this file): scan and tell. Read-only: nothing is moved, linked or deleted.
-Phase 2: ask the download clients and the arrs, so an unmatched download becomes "leftover", "orphan" or "still seeding".
+Phase 1: scan and tell. Phase 2 (in this file too): ask the download clients (Deluge, NZBGet, qBittorrent) and the arrs' import history, so a
+download becomes "leftover", "orphan", "seeding only", with the client's seeding state and whether your seeding rule lets it go now. Still read-only.
 Phase 3: fixes behind a dry run, a holding bin and a 14-day undo.
 
 Verdict codes (never shown raw; see LABEL and sentence()):
@@ -19,11 +19,14 @@ Verdict codes (never shown raw; see LABEL and sentence()):
   LOOKALIKE          same size as a library file, different content                               wasted 0
   DOWNLOAD_UNMATCHED no library file matches this download (phase 2 decides what it is)           wasted size, "to decide"
   DOWNLOAD_OTHER_RELEASE  same, but the library holds a different release of the same title (a leftover from an upgrade, most likely)
+  LEFTOVER           an arr imported this download and the library has since replaced or rewritten that file  wasted size
+  ORPHAN             no client knows the file and no arr imported it                                wasted size
+  SEEDING_ONLY       a client seeds it and no arr ever imported it (software, extras, kept torrents) wasted 0
   BIN_OLD            in a recycle bin longer than RECYCLE_DAYS                                     wasted size
   BIN_RECENT         in a recycle bin, within the rule                                            wasted 0
   OTHER              in a folder that is neither library, downloads nor recycle bin               wasted 0
 """
-import os, re, sys, json, time, shutil, sqlite3, hashlib, threading, datetime, argparse, traceback
+import os, re, sys, json, time, shutil, sqlite3, hashlib, threading, datetime, argparse, traceback, base64, urllib.request, urllib.parse, http.cookiejar
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 APP = "Dedupearr"; TAGLINE = "the truth about your storage"; PHASE = 1
@@ -35,7 +38,7 @@ def _list(name, default): return [p.strip().rstrip("/") for p in os.environ.get(
 SCAN_ROOTS = _list("SCAN_ROOTS", "/data")
 LIBRARY_DIRS = _list("LIBRARY_DIRS", ""); DOWNLOAD_DIRS = _list("DOWNLOAD_DIRS", ""); RECYCLE_DIRS = _list("RECYCLE_DIRS", "")
 LIBRARY_HINTS = [h.lower() for h in _list("LIBRARY_HINTS", "media,library,movies,movie,films,tv,shows,series,anime,plex,jellyfin")]
-DOWNLOAD_HINTS = [h.lower() for h in _list("DOWNLOAD_HINTS", "torrents,torrent,downloads,download,complete,incomplete,seeding,usenet,nzb")]
+DOWNLOAD_HINTS = [h.lower() for h in _list("DOWNLOAD_HINTS", "torrents,torrent,downloads,download,complete,completed,incomplete,intermediate,seeding,seeds,usenet,nzb,nzbget,sabnzbd,qbittorrent,deluge")]
 RECYCLE_HINTS = [h.lower() for h in _list("RECYCLE_HINTS", ".recycle,.trash,recycle,trash,.recyclebin,#recycle,@recycle,.trash-1000")]
 RECYCLE_DAYS = int(os.environ.get("RECYCLE_DAYS", "30"))
 MIN_SIZE_MB = int(os.environ.get("MIN_SIZE_MB", "50"))
@@ -50,6 +53,130 @@ def sandbox_rate_ok(ip, limit=None):
     limit = limit or SANDBOX_RATE; minute = int(time.time() // 60); key = (ip, minute)
     for k in [k for k in _RATE if k[1] < minute - 1]: _RATE.pop(k, None)
     _RATE[key] = _RATE.get(key, 0) + 1; return _RATE[key] <= limit
+def _env(k, d=""): return os.environ.get(k, d).strip()
+ARRS = {a: {"url": _env(f"{a.upper()}_URL").rstrip("/"), "key": _env(f"{a.upper()}_APIKEY")} for a in ("sonarr", "radarr", "whisparr")}
+CLIENTS = {"Deluge": {"url": _env("DELUGE_URL").rstrip("/"), "password": _env("DELUGE_PASSWORD")},
+           "NZBGet": {"url": _env("NZBGET_URL").rstrip("/"), "user": _env("NZBGET_USER"), "password": _env("NZBGET_PASSWORD")},
+           "qBittorrent": {"url": _env("QBIT_URL").rstrip("/"), "user": _env("QBIT_USER"), "password": _env("QBIT_PASSWORD")}}
+SEED_MIN_RATIO = float(_env("SEED_MIN_RATIO", "1.0") or 1.0); SEED_MIN_DAYS = float(_env("SEED_MIN_DAYS", "7") or 7)   # "seeding is done" = either reached
+CLIENT_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("CLIENT_PATH_MAP").split(",") if "=" in x]   # clientpath=ourpath when a client sees the files under another path
+CLIENT_STATUS = {}   # "Deluge" -> {"ok": bool, "n": int, "note": str}; shown on About
+
+def map_client_path(p):
+    for a, b in CLIENT_PATH_MAP:
+        if p.startswith(a): return b.rstrip("/") + p[len(a.rstrip("/")):]
+    return p
+
+CLIENT_TIMEOUT = int(_env("CLIENT_TIMEOUT", "60") or 60)
+def http_json(url, data=None, headers=None, cj=None, timeout=None, form=False):
+    timeout = timeout or CLIENT_TIMEOUT
+    """GET (data None) or POST JSON / form; returns the parsed JSON ({} for an empty body)."""
+    body = (urllib.parse.urlencode(data).encode() if form else json.dumps(data).encode()) if data is not None else None
+    h = {"Content-Type": "application/x-www-form-urlencoded" if form else "application/json", **(headers or {})}
+    req = urllib.request.Request(url, data=body, headers=h)
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj)) if cj is not None else urllib.request.build_opener()
+    with opener.open(req, timeout=timeout) as r: raw = r.read().decode("utf-8", "replace")
+    return json.loads(raw) if raw.strip() else {}
+
+def read_deluge():
+    cfg = CLIENTS["Deluge"]
+    if not cfg["url"]: return {}
+    cj = http.cookiejar.CookieJar(); u = cfg["url"] + "/json"; n = [0]
+    def call(m, params):
+        n[0] += 1; r = http_json(u, {"method": m, "params": params, "id": n[0]}, cj=cj)
+        if r.get("error"): raise RuntimeError(f"{m}: {r['error'].get('message') if isinstance(r['error'], dict) else r['error']}")
+        return r.get("result")
+    if not call("auth.login", [cfg["password"]]): raise RuntimeError("the web password was refused")
+    if not call("web.connected", []):
+        hosts = call("web.get_hosts", []) or []
+        if hosts: call("web.connect", [hosts[0][0]])
+    fields = ["name", "save_path", "state", "ratio", "seeding_time", "time_added", "label", "total_size", "is_finished", "progress", "files"]
+    ts = call("core.get_torrents_status", [{}, fields]) or {}
+    out = {}
+    for tid, t in ts.items():
+        for f in t.get("files") or []:
+            out[map_client_path(os.path.join(t["save_path"], f["path"]))] = {"client": "Deluge", "name": t["name"], "state": str(t.get("state", "")).lower(), "ratio": float(t.get("ratio") or 0),
+                                                                            "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("label") or "", "finished": bool(t.get("is_finished")), "id": tid}
+    CLIENT_STATUS["Deluge"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
+
+def read_nzbget():
+    cfg = CLIENTS["NZBGet"]
+    if not cfg["url"]: return {}
+    H = {"Authorization": "Basic " + base64.b64encode(f"{cfg['user']}:{cfg['password']}".encode()).decode()}; u = cfg["url"] + "/jsonrpc"
+    hist = http_json(u, {"method": "history", "params": [False]}, H).get("result") or []
+    groups = http_json(u, {"method": "listgroups", "params": [0]}, H).get("result") or []
+    out = {}
+    for h in hist:   # a usenet download is a folder; any file under it belongs to it (keys end with '/')
+        d = map_client_path(h.get("FinalDir") or h.get("DestDir") or "")
+        if d: out[d.rstrip("/") + "/"] = {"client": "NZBGet", "name": h.get("Name", ""), "state": "finished" if str(h.get("Status", "")).startswith("SUCCESS") else "failed" if "FAILURE" in str(h.get("Status", "")) else str(h.get("Status", "")).lower(),
+                                           "ratio": 0.0, "seeding_days": 0.0, "label": h.get("Category") or "", "finished": True, "id": h.get("NZBID")}
+    for g in groups:
+        d = map_client_path(g.get("DestDir") or "")
+        if d: out[d.rstrip("/") + "/"] = {"client": "NZBGet", "name": g.get("NZBName", ""), "state": "downloading", "ratio": 0.0, "seeding_days": 0.0, "label": g.get("Category") or "", "finished": False, "id": g.get("NZBID")}
+    CLIENT_STATUS["NZBGet"] = {"ok": True, "n": len(hist), "note": f"{len(hist)} in history, {len(groups)} downloading"}; return out
+
+def read_qbit():
+    cfg = CLIENTS["qBittorrent"]
+    if not cfg["url"]: return {}
+    cj = http.cookiejar.CookieJar(); base = cfg["url"] + "/api/v2"
+    req = urllib.request.Request(base + "/auth/login", data=urllib.parse.urlencode({"username": cfg["user"], "password": cfg["password"]}).encode(), headers={"Referer": cfg["url"]})
+    if "Ok" not in urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj)).open(req, timeout=30).read().decode(): raise RuntimeError("the login was refused")
+    out = {}; ts = http_json(base + "/torrents/info", cj=cj) or []
+    for t in ts:
+        for f in http_json(base + "/torrents/files?hash=" + t["hash"], cj=cj) or []:
+            out[map_client_path(os.path.join(t["save_path"], f["name"]))] = {"client": "qBittorrent", "name": t["name"], "state": str(t.get("state", "")).lower(), "ratio": float(t.get("ratio") or 0),
+                                                                             "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("category") or "", "finished": float(t.get("progress") or 0) >= 1, "id": t["hash"]}
+    CLIENT_STATUS["qBittorrent"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
+
+def read_arr_imports():
+    """What each arr imported from where: dropped path (the download) -> imported path (the library file), newest first."""
+    out = {}
+    for app, cfg in ARRS.items():
+        if not cfg["url"] or not cfg["key"]: continue
+        H = {"X-Api-Key": cfg["key"]}; n = 0; page = 1
+        try:
+            while page <= 40:
+                r = http_json(f"{cfg['url']}/api/v3/history?page={page}&pageSize=500&eventType=3&sortKey=date&sortDirection=descending", headers=H)
+                recs = r.get("records") or []
+                for rec in recs:
+                    d = rec.get("data") or {}; dropped = map_client_path(d.get("droppedPath") or "")
+                    if dropped and dropped not in out: out[dropped] = {"app": app, "imported": d.get("importedPath") or "", "when": str(rec.get("date", ""))[:10], "title": rec.get("sourceTitle", "")}
+                n += len(recs)
+                if len(recs) < 500: break
+                page += 1
+            CLIENT_STATUS[app.capitalize()] = {"ok": True, "n": n, "note": f"{n} imports in its history"}
+        except Exception as e: CLIENT_STATUS[app.capitalize()] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{app}: {e}")
+    return out
+
+def gather_context():
+    """Ask every configured client and arr once per scan. A client that fails is reported on About and simply leaves its files unexplained."""
+    clients = {}
+    for name, fn in (("Deluge", read_deluge), ("NZBGet", read_nzbget), ("qBittorrent", read_qbit)):
+        if not CLIENTS[name]["url"]: CLIENT_STATUS.pop(name, None); continue
+        try: clients.update(fn())
+        except Exception as e: CLIENT_STATUS[name] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{name}: {e}")
+    return {"clients": clients, "imports": read_arr_imports(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
+
+def client_for(path, clients):
+    if path in clients: return clients[path]
+    d = path
+    while len(d) > 1:
+        d = os.path.dirname(d)
+        if d + "/" in clients: return clients[d + "/"]
+    return None
+
+def seeding_done(ci):
+    """Nothing holds the file (no client knows it), or the client finished it and your seeding rule is met."""
+    if ci is None: return True
+    if not ci.get("finished"): return False
+    if ci.get("client") == "NZBGet": return True
+    return ci.get("ratio", 0) >= SEED_MIN_RATIO or ci.get("seeding_days", 0) >= SEED_MIN_DAYS
+
+def client_text(ci):
+    if ci is None: return "not in any download client"
+    if ci["client"] == "NZBGet": return f"NZBGet: {ci['state']}" + (f" ({ci['label']})" if ci.get("label") else "")
+    return f"{ci['client']}: {ci['state']}, ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days" + (f", label {ci['label']}" if ci.get("label") else "")
+
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts", ".wmv", ".webm", ".mpg", ".mpeg", ".flv", ".iso"}
 SAMPLE = 1024 * 1024
 LOG = []; ERRORS = []   # ERRORS: what went wrong, for the About page ("Recent errors") and the health line
@@ -71,7 +198,11 @@ def db():
     CREATE TABLE IF NOT EXISTS run(id INTEGER PRIMARY KEY AUTOINCREMENT, started REAL, finished REAL, files INTEGER, bytes INTEGER, wasted INTEGER, note TEXT);
     CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
     CREATE TABLE IF NOT EXISTS ignored(path TEXT PRIMARY KEY, at REAL);
-    """); return c
+    """)
+    cols = {r[1] for r in c.execute("PRAGMA table_info(verdict)")}
+    for col, typ in (("client", "TEXT"), ("removable", "INTEGER")):
+        if col not in cols: c.execute(f"ALTER TABLE verdict ADD COLUMN {col} {typ}")
+    return c
 
 def kv_get(c, k, d=None):
     r = c.execute("SELECT v FROM kv WHERE k=?", (k,)).fetchone(); return r[0] if r else d
@@ -194,8 +325,9 @@ def scan(c=None, now=None):
                       (path, st.st_dev, st.st_ino, st.st_nlink, st.st_size, st.st_mtime, classify(path), now))
             n += 1; total += st.st_size; SCANNING["files"] = n
             if n % 500 == 0: c.commit()
-        c.commit(); SCANNING["phase"] = "judging"
-        wasted = judge(c, now)
+        c.commit(); SCANNING["phase"] = "asking the download clients and the arrs"
+        ctx = gather_context(); SCANNING["phase"] = "judging"
+        wasted = judge(c, now, ctx)
         c.execute("INSERT INTO run(started,finished,files,bytes,wasted,note) VALUES(?,?,?,?,?,?)", (started, time.time(), n, total, wasted, "ok"))
         c.commit(); log(f"scan done: {n} files, {human(total)}, {human(wasted)} that can come back")
         return {"files": n, "bytes": total, "wasted": wasted}
@@ -207,7 +339,9 @@ def scan(c=None, now=None):
         SCANNING.update(on=False, phase="")
         if own: c.close()
 
-def judge(c, now):
+def judge(c, now, ctx=None):
+    ctx = ctx or {"clients": {}, "imports": {}, "clients_ok": False}; clients, imports, clients_ok = ctx["clients"], ctx["imports"], ctx.get("clients_ok", False)
+    extra = {}   # path -> (client info or None, removable)
     rows = [dict(r) for r in c.execute("SELECT * FROM file")]
     groups = {}
     for r in rows: groups.setdefault((r["dev"], r["ino"]), []).append(r)
@@ -225,8 +359,10 @@ def judge(c, now):
             lib = next(m for m in members if m["kind"] == "library")
             ev = f"inode {ino}, link count {lib['nlink']}, {len(members)} names on this scan"
             for m in members:
+                ci = client_for(m["path"], clients) if m["kind"] == "download" else None
+                if ci: extra[m["path"]] = (ci, False)
                 if m is lib: verdicts[m["path"]] = ("REAL_COPY", m["kind"], m["size"], 0, [x["path"] for x in members if x is not lib][0], ev)
-                elif m["kind"] == "download": verdicts[m["path"]] = ("LINKED_SEED", m["kind"], m["size"], 0, lib["path"], ev)
+                elif m["kind"] == "download": verdicts[m["path"]] = ("LINKED_SEED", m["kind"], m["size"], 0, lib["path"], ev + ("; " + client_text(ci) if ci or clients_ok else ""))
         elif kinds == {"library"} and len(members) > 1:
             for m in members: verdicts[m["path"]] = ("LIBRARY_TWIN", "library", m["size"], 0, [x["path"] for x in members if x is not m][0], f"inode {ino}, link count {m['nlink']}")
     # 2. downloads not linked to the library: identical copy, lookalike or unmatched
@@ -253,7 +389,17 @@ def judge(c, now):
             for k2, l in lib_by_title.get((k or " ").rsplit(" ", 1)[0], []):
                 if same_title(k, k2):
                     code, twin, ev = "DOWNLOAD_OTHER_RELEASE", l["path"], f"inode {r['ino']}, link count {r['nlink']}, {human(r['size'])}; the library has a different release of the same title ({human(l['size'])}, inode {l['ino']})"; break
-        verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE") else 0, twin, ev)
+        ci = client_for(r["path"], clients); ai = imports.get(r["path"])
+        if code in ("DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LOOKALIKE"):   # a lookalike is only a size coincidence: the client and the arr say what the file really is
+            if ai and ai.get("imported"):
+                gone = not os.path.exists(ai["imported"])
+                code, twin = "LEFTOVER", twin or ai["imported"]
+                ev += f"; {ai['app'].capitalize()} imported it on {ai['when']} to {ai['imported']}" + (", and that file has since been replaced" if gone else ", which has since been rewritten (different content now)")
+            elif clients_ok and ci is None and (ARRS["sonarr"]["url"] or ARRS["radarr"]["url"]): code = "ORPHAN"; ev += "; no download client knows this file and no arr imported it"
+            elif ci and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and (ARRS["sonarr"]["url"] or ARRS["radarr"]["url"]): code = "SEEDING_ONLY"; ev += "; no arr ever imported it"
+        if ci or clients_ok: ev += "; " + client_text(ci)
+        extra[r["path"]] = (ci, seeding_done(ci))
+        verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN") else 0, twin, ev)
     # 3. everything else
     for r in rows:
         if r["path"] in verdicts: continue
@@ -266,10 +412,11 @@ def judge(c, now):
     # write back, keeping first_seen
     seen = set(verdicts)
     for path, (code, kind, size, wasted, twin, ev) in verdicts.items():
-        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?)
+        ci, rem = extra.get(path, (None, True))
+        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen,client,removable) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                      ON CONFLICT(path) DO UPDATE SET code=excluded.code,title=excluded.title,kind=excluded.kind,size=excluded.size,wasted=excluded.wasted,
-                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen""",
-                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now))
+                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen,client=excluded.client,removable=excluded.removable""",
+                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now, json.dumps(ci) if ci else None, 1 if rem else 0))
     for r in c.execute("SELECT path FROM verdict").fetchall():
         if r["path"] not in seen: c.execute("DELETE FROM verdict WHERE path=?", (r["path"],))
     c.commit()
@@ -278,20 +425,31 @@ def judge(c, now):
 # ---------------------------------------------------------------------------------------------------------- plain words
 LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": "Two names, one file", "LINKED_SEED": "Seeding name",
          "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match", "DOWNLOAD_OTHER_RELEASE": "Different release in library",
+         "LEFTOVER": "Leftover from an upgrade", "ORPHAN": "Orphan", "SEEDING_ONLY": "Seeding only",
          "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "OTHER": "Unsorted folder"}
-NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "BIN_OLD", "OTHER"}
+NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"}
+def seed_sentence(ci):
+    if ci is None: return "Nothing holds it, so it can go now."
+    if ci.get("client") == "NZBGet": return "It came from usenet, so there is no seeding to wait for; it can go now."
+    if seeding_done(ci): return f"{ci['client']} has seeded it to ratio {ci['ratio']:.1f} over {ci['seeding_days']:.0f} days, past your rule, so it can go now."
+    return f"{ci['client']} is still seeding it (ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days); your rule keeps it until ratio {SEED_MIN_RATIO:g} or {SEED_MIN_DAYS:g} days."
 def sentence(v):
     code, size, twin = v["code"], human(v["size"]), v.get("twin")
     t = friendly_title(twin) if twin else ""
+    ci = v.get("client") if isinstance(v.get("client"), dict) else (json.loads(v["client"]) if v.get("client") else None)
+    tail = (" " + seed_sentence(ci)) if (ci or v.get("clients_known")) else ""
+    if code == "LEFTOVER": return f"A leftover from an upgrade: this download was imported into the library and the library has since moved on ({t} is what it keeps now). {size} to get back.{tail}"
+    if code == "ORPHAN": return f"An orphan: no download client knows this file and no arr imported it. {size} to get back. Nothing holds it, so it can go now."
+    if code == "SEEDING_ONLY": return f"Kept for seeding: {ci['client'] if ci else 'your client'} is seeding it and nothing in the library came from it. Not counted as waste; it goes when you remove the torrent."
     if code == "REAL_COPY": return "One file with two names: the library and the download folder share it, so seeding costs no extra space."
     if code == "LINKED_SEED": return f"This is the download-folder name of the library file {t}. Same file, no extra space."
     if code == "LIBRARY_ONLY": return "One copy, in the library. Nothing to do."
     if code == "LIBRARY_TWIN": return f"Two names inside the library share one file ({t} is the other). No space wasted."
-    if code == "DUPLICATE_COPY": return f"Stored twice: the library file {t} and this download are two separate files with identical content. Making them one file again would free {size}."
-    if code == "DUPLICATE_HEADER": return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. {size} to get back."
+    if code == "DUPLICATE_COPY": return f"Stored twice: the library file {t} and this download are two separate files with identical content. Making them one file again would free {size}.{tail}"
+    if code == "DUPLICATE_HEADER": return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. {size} to get back.{tail}"
     if code == "LOOKALIKE": return f"Same size as {t} but different content, so not a duplicate. Worth a look if you expected one copy."
     if code == "DOWNLOAD_UNMATCHED": return f"Nothing in the library matches this download. It may be a leftover from an upgrade, an orphan, or something still seeding; the download-client check (phase 2) will tell. {size} to decide on."
-    if code == "DOWNLOAD_OTHER_RELEASE": return f"Nothing identical in the library, but it holds a different release of the same title: {t}. If that one is the keeper, this download is a leftover from an upgrade and can go once seeding is done. {size} to get back; phase 2 confirms it with the torrent client."
+    if code == "DOWNLOAD_OTHER_RELEASE": return f"Nothing identical in the library, but it holds a different release of the same title: {t}. If that one is the keeper, this download is a leftover from an upgrade and can go once seeding is done. {size} to get back.{tail}"
     if code == "BIN_OLD": return f"In a recycle bin longer than your {RECYCLE_DAYS}-day rule. Emptying it would free {size}."
     if code == "BIN_RECENT": return f"In a recycle bin, within your {RECYCLE_DAYS}-day rule. It will show up here when the rule runs out."
     return "Not inside a folder I recognise as library, downloads or a recycle bin. Name the folder in the settings and it will be judged on the next scan."
@@ -300,9 +458,11 @@ def state(c):
     items = []
     ignored = {r["path"] for r in c.execute("SELECT path FROM ignored")}
     for r in c.execute("SELECT * FROM verdict ORDER BY wasted DESC, size DESC, path"):
-        v = dict(r); v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])
+        v = dict(r); v["clients_known"] = bool(CLIENT_STATUS); v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])
         v["needs_you"] = v["code"] in NEEDS_YOU and v["path"] not in ignored; v["ignored"] = v["path"] in ignored
         v["twin_title"] = friendly_title(v["twin"]) if v["twin"] else None
+        ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and CLIENT_STATUS)) else ""
+        v["removable"] = bool(v.get("removable")) and v["needs_you"]
         items.append(v)
     counts, bytes_by = {}, {}
     for v in items:
@@ -314,14 +474,17 @@ def state(c):
             u = shutil.disk_usage(root); disks.append({"root": root, "total": u.total, "used": u.used, "free": u.free, "total_h": human(u.total), "used_h": human(u.used), "free_h": human(u.free)})
         except OSError: disks.append({"root": root, "missing": True})
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone()
-    reclaim = bytes_by.get("DUPLICATE_COPY", 0) + bytes_by.get("DUPLICATE_HEADER", 0) + bytes_by.get("BIN_OLD", 0); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0) + bytes_by.get("DOWNLOAD_OTHER_RELEASE", 0)
-    lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies and old recycle-bin files"
-            + (f", and another {human(decide)} of downloads has no match yet" if decide else "") + ".") if last else "No scan yet. Press Scan now, or wait for the night."
+    reclaim = sum(bytes_by.get(k, 0) for k in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "BIN_OLD", "LEFTOVER", "ORPHAN")); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0) + bytes_by.get("DOWNLOAD_OTHER_RELEASE", 0)
+    now_bytes = sum(v["wasted"] for v in items if v["removable"] and v["code"] != "DOWNLOAD_UNMATCHED")
+    lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies, leftovers, orphans and old recycle-bin files"
+            + (f", and another {human(decide)} of downloads is still undecided" if decide else "") + "."
+            + (f" {human(now_bytes)} of it can go right now by your seeding rule." if now_bytes and CLIENT_STATUS else "")) if last else "No scan yet. Press Scan now, or wait for the night."
     return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True, "sandbox": SANDBOX, "sandbox_note": SANDBOX_NOTE if SANDBOX else "",
             "roots": SCAN_ROOTS, "disks": disks, "scanning": {k: SCANNING[k] for k in ("on", "phase", "files", "started")},
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
-            "decide_bytes": decide, "decide_h": human(decide), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:]}
+            "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
+            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS}}
 
 def about(c):
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone(); health = []
@@ -333,11 +496,15 @@ def about(c):
         if not os.path.isdir(r): health.append({"level": "warn", "text": f"Scan root {r} is not mounted or not a folder."})
     errs = errors_recent()
     health.append({"level": "warn", "text": f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours; the newest: {errs[-1]['text'][:120]}"} if errs else {"level": "ok", "text": "No errors in the last 24 hours."})
-    health.append({"level": "ok", "text": "Phase 1 is read-only: nothing is moved, linked or deleted."})
+    for name, st_ in sorted(CLIENT_STATUS.items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
+    if not CLIENT_STATUS: health.append({"level": "warn", "text": "No download client or arr is connected yet, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
+    health.append({"level": "ok", "text": "Read-only: nothing is moved, linked or deleted."})
     if SANDBOX: health.append({"level": "ok", "text": SANDBOX_NOTE})
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
-                         "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME},
+                         "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME,
+                         "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "CLIENT_PATH_MAP": CLIENT_PATH_MAP,
+                         "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}}},
             "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
 

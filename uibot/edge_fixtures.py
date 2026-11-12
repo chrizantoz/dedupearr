@@ -30,7 +30,7 @@ for n in range(3000):
     src = rnd.choice(base["state"]["items"]); i = copy.deepcopy(src)
     i["path"] = f"/data/torrents/tv/Show {n:04d}/Some.Very.Long.Release.Name.S{n % 40:02d}E{n % 24:02d}.2160p.WEB-DL.DDP5.1.Atmos.H.265-GROUP{n}.mkv"
     i["title"] = f"Some Very Long Release Name {n} S{n % 40:02d}E{n % 24:02d}"; i["code"] = codes[n % len(codes)]; i["label"] = s["labels"][i["code"]]
-    i["needs_you"] = i["code"] in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "BIN_OLD", "OTHER"); i["ignored"] = False
+    i["needs_you"] = i["code"] in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"); i["ignored"] = False
     i["size"] = rnd.randint(500_000_000, 60_000_000_000); i["wasted"] = i["size"] if i["needs_you"] else 0; i["size_h"] = f"{i['size'] / 1e9:.1f} GB"; i["wasted_h"] = f"{i['wasted'] / 1e9:.1f} GB" if i["wasted"] else "0 B"
     items.append(i)
 s["items"] = items; s["counts"] = {}; s["wasted_by"] = {}

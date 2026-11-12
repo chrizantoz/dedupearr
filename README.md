@@ -18,12 +18,12 @@ It is deliberately small: one Python file, one HTML page, a local SQLite file fo
 
 ## 🚧 Status
 
-**Phase 1 of 4, read-only.** Dedupearr looks and tells; it moves, links and deletes nothing. It was built on one homelab (about 15,000 files and 38 TB across Sonarr, Radarr and qBittorrent on Unraid) and its first real scan already found 370 GB of second copies. The next phases add the download-client and arr readers, then the fixes behind a dry run and a 14-day undo. The [roadmap](ROADMAP.md) has the detail.
+**Phase 2 of 4, still read-only.** Dedupearr looks and tells; it moves, links and deletes nothing. It was built on one homelab (about 15,000 files and 38 TB across Sonarr, Radarr and qBittorrent on Unraid) and its first real scan already found 370 GB of second copies. The next phases add the download-client and arr readers, then the fixes behind a dry run and a 14-day undo. The [roadmap](ROADMAP.md) has the detail.
 
 | Phase | What it does | Status |
 | --- | --- | --- |
-| 1 · Scan and tell | Disk scan (inode, link count, size, checksum), verdicts, Files and Space pages, nightly scan | **this release** |
-| 2 · Ask the apps | qBittorrent, Deluge, rTorrent, Transmission, Sonarr, Radarr: an unmatched download becomes *leftover*, *orphan* or *still seeding* | next |
+| 1 · Scan and tell | Disk scan (inode, link count, size, checksum), verdicts, Files and Space pages, nightly scan | done |
+| 2 · Ask the apps | Deluge, NZBGet, qBittorrent and the arrs' import history: a download becomes *leftover*, *orphan* or *seeding only*, with your seeding rule saying what can go now | **this release** (rTorrent, Transmission, SABnzbd to come) |
 | 3 · Fix safely | Relink, remove the old torrent, empty the bin: dry run first, holding bin, 14-day undo | after 2 |
 | 4 · Easy to install | Setup wizard with the shared-mount test, Unraid cache/array awareness, Unraid Apps, public demo | after 3 |
 
@@ -120,6 +120,12 @@ Phase 1 reads its settings from the environment; the About tab shows them (never
 | `MIN_SIZE_MB` | `50` | Smaller files are not judged |
 | `HASH_BUDGET_MB` | `20000` | Full checksums per scan; beyond it duplicates are called "very likely" from samples |
 | `SCAN_TIME` | `04:30` | Nightly scan time (container TZ) |
+| `SONARR_URL`, `SONARR_APIKEY` (also `RADARR_*`, `WHISPARR_*`) | empty | Lets Dedupearr read the arr's import history: which download became which library file |
+| `DELUGE_URL`, `DELUGE_PASSWORD` | empty | Deluge web address (`http://host:8112`) and its web password |
+| `NZBGET_URL`, `NZBGET_USER`, `NZBGET_PASSWORD` | empty | NZBGet address (`http://host:6789`) and its control login |
+| `QBIT_URL`, `QBIT_USER`, `QBIT_PASSWORD` | empty | qBittorrent web address and login |
+| `SEED_MIN_RATIO`, `SEED_MIN_DAYS` | `1.0`, `7` | Your seeding rule: a torrent is "done" when either is reached; then a leftover or second copy "can go now" |
+| `CLIENT_PATH_MAP` | empty | `clientpath=ourpath,…` when a client sees the files under another path than Dedupearr does |
 | `PORT` | `3092` | Web port |
 
 ## 🧑‍💻 For developers

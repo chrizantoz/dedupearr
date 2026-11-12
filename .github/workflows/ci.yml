@@ -12,7 +12,7 @@ jobs:
       - name: "code quality: compile, pyflakes, ruff"
         run: python -m py_compile dedupearr.py tests/*.py && pip install -q pyflakes ruff && python -m pyflakes dedupearr.py tests/*.py && ruff check dedupearr.py tests
       - name: "backend: plain language, verdicts on the fake disk, API contract (records the UI fixtures)"
-        run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py && python tests/sandbox_mode.py
+        run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py && python tests/sandbox_mode.py && python tests/clients.py
       - name: "robustness: random disks, chaos, performance budget, one mutant a day"
         run: python tests/fuzz_disk.py 25 ${{ github.run_number }} && python tests/chaos.py && python tests/perf_budget.py && python tests/mutation_check.py
       - uses: actions/setup-node@v4

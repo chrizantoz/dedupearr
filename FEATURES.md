@@ -25,6 +25,9 @@ The left column is the internal code (handy when searching the code or the API);
 | LOOKALIKE | same size as a library file, different content | 0 |
 | DOWNLOAD_UNMATCHED | no library file has the same content; phase 2 asks the client whether it is a leftover, an orphan or still seeding | the file's size, counted as "to decide" |
 | DOWNLOAD_OTHER_RELEASE | no identical file, but the library holds a different release of the same title (matched on title and year, or title and episode): most likely a leftover from an upgrade | the file's size, counted as "to decide" |
+| LEFTOVER | an arr's history says this download was imported, and the library file it became has since been replaced or rewritten | the file's size |
+| ORPHAN | no download client knows the file and no arr imported it; nothing holds it | the file's size |
+| SEEDING_ONLY | a client seeds it and no arr ever imported it (software, extras, torrents you keep on purpose) | 0 |
 | BIN_OLD | in a recycle bin longer than `RECYCLE_DAYS` | the file's size |
 | BIN_RECENT | in a recycle bin, within the rule | 0 |
 | OTHER | the folder name gives no hint (not library, downloads or recycle bin); set `LIBRARY_DIRS` / `DOWNLOAD_DIRS` / `RECYCLE_DIRS` | 0 |

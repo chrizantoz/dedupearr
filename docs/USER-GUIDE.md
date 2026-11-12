@@ -36,12 +36,15 @@ Each row is one file with a coloured chip:
 | 🟡 **Stored twice, header differs** | same, except the first megabyte: a language tag or title was edited on one copy (Auditarr does this) | the download can go once seeding is done; never relink these (the torrent would put the old header back) |
 | 🟡 **Download without a match** | nothing in the library matches this download | a leftover from an upgrade, an orphan or still seeding; phase 2 asks the client and tells you which |
 | 🟡 **Different release in library** | nothing identical, but the library has another release of the same title (same name and year, or same episode) | almost always a leftover from an upgrade: the download can go once seeding is done |
+| 🟡 **Leftover from an upgrade** | Sonarr or Radarr imported this download, and the library has since replaced the file it became | it can go; the row says whether seeding is done |
+| 🔴 **Orphan** | no download client knows this file and no arr imported it | nothing holds it; it can go |
+| 🟢 **Seeding only** | your client seeds it and nothing in the library came from it (software, extras, torrents you keep) | nothing; it goes when you remove the torrent |
 | ⚪ **Looks alike** | same size as a library file but different content | not a duplicate; worth a look if you expected one copy |
 | ⚪ **Old recycle-bin file** | in a recycle bin longer than your rule (30 days by default) | empty it |
 | 🟢 **In the recycle bin** | in a recycle bin, within the rule | nothing yet |
 | 🔴 **Unsorted folder** | the folder name does not say whether this is library, downloads or a recycle bin | tell Dedupearr with `LIBRARY_DIRS`, `DOWNLOAD_DIRS` or `RECYCLE_DIRS` |
 
-Each row has one plain sentence that says what the file is and what would change. An **evidence** link underneath opens the numbers: the inodes, link counts, sizes and whether the checksums matched, plus the path of the other file when there is one.
+Each row has one plain sentence that says what the file is and what would change. Download rows also show what the client says ("Deluge: seeding, ratio 1.31, 3 days") and a **can go now** chip when your seeding rule is met, or when nothing holds the file at all. An **evidence** link underneath opens the numbers: the inodes, link counts, sizes and whether the checksums matched, plus the path of the other file when there is one.
 
 ## 🗂️ The tabs
 
@@ -74,6 +77,8 @@ One scan at `SCAN_TIME` (04:30 by default), and one at start when the last scan 
 **Why does it say "header differs"?** Auditarr (or you, with a tag editor) changed the audio-language tag or the title inside the library file. The video is the same, the first megabyte is not. Those two files must never be relinked: the torrent client would write the old header back over the fixed library file.
 
 **What does "Download without a match" mean?** No library file has the same content. It may be an old release that an upgrade replaced, a download that never imported, or something you keep only for seeding. Phase 2 asks the download client and the arrs and says which.
+
+**What is "your seeding rule"?** Two numbers in the settings, `SEED_MIN_RATIO` (1.0 by default) and `SEED_MIN_DAYS` (7). A torrent counts as done seeding when either is reached. Set them to what your trackers expect. Usenet downloads have no seeding, so they can go as soon as the arr has imported them.
 
 **Does it slow my server down?** A scan of 15,000 files takes under a minute and reads only file metadata plus a few megabytes of each file that looks like a copy. Full checksums are capped per night by `HASH_BUDGET_MB`.
 

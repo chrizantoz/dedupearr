@@ -7,15 +7,19 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-11 20:22, 17 files in 0 s."
+   "text": "Last scan 2026-11-11 20:54, 17 files in 0 s."
   },
   {
    "level": "ok",
    "text": "No errors in the last 24 hours."
   },
   {
+   "level": "warn",
+   "text": "No download client or arr is connected yet, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."
+  },
+  {
    "level": "ok",
-   "text": "Phase 1 is read-only: nothing is moved, linked or deleted."
+   "text": "Read-only: nothing is moved, linked or deleted."
   }
  ],
  "settings": {
@@ -28,13 +32,24 @@
   "RECYCLE_DAYS": 30,
   "MIN_SIZE_MB": 1,
   "HASH_BUDGET_MB": 100,
-  "SCAN_TIME": "04:30"
+  "SCAN_TIME": "04:30",
+  "SEED_MIN_RATIO": 1.0,
+  "SEED_MIN_DAYS": 7.0,
+  "CLIENT_PATH_MAP": [],
+  "connections": {
+   "sonarr": "not set",
+   "radarr": "not set",
+   "whisparr": "not set",
+   "Deluge": "not set",
+   "NZBGet": "not set",
+   "qBittorrent": "not set"
+  }
  },
  "runs": [
   {
    "id": 1,
-   "started": 1794446541.1675496,
-   "finished": 1794446541.2185707,
+   "started": 1794448492.853881,
+   "finished": 1794448492.903518,
    "files": 17,
    "bytes": 54525952,
    "wasted": 22020096,
@@ -42,8 +57,8 @@
   }
  ],
  "log": [
-  "2026-11-11 20:22:21 Dedupearr dev listening on :47591",
-  "2026-11-11 20:22:21 scan done: 17 files, 54.5 MB, 22 MB that can come back"
+  "2026-11-11 20:54:52 Dedupearr dev listening on :33673",
+  "2026-11-11 20:54:52 scan done: 17 files, 54.5 MB, 22 MB that can come back"
  ],
  "errors": [],
  "links": {
