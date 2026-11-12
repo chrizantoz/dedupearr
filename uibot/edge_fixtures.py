@@ -56,9 +56,9 @@ a["health"] = [{"level": "warn", "text": "The last scan failed: [Errno 13] Permi
 a["errors"] = [{"at": 1794438000, "text": "cannot list /data/torrents: [Errno 13] Permission denied"}] * 3
 write("errors", e)
 # errors world also checks the home-network case: sign-in on but the LAN let you in, so no Sign out
-e["state"]["auth"] = {"enabled": True, "via": "lan"}; write("errors", e)
+e["state"]["auth"] = {"enabled": True, "via": "lan", "user": "owner", "source": "env", "local_no_login": True, "local_env": False, "warning": "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."}; write("errors", e)
 # live: FIX_MODE=on with the holding bin in use (P3.1): orphans offer a real move, everything else still previews, two files wait in the bin
-e = copy.deepcopy(base); s = e["state"]; s["fix_mode"] = "on"; s["live_kinds"] = ["bin"]; s["auth"] = {"enabled": True, "via": ""}
+e = copy.deepcopy(base); s = e["state"]; s["fix_mode"] = "on"; s["live_kinds"] = ["bin"]; s["auth"] = {"enabled": True, "via": "", "user": "owner", "source": "page", "local_no_login": False, "local_env": False, "warning": "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."}
 s["holding"] = {"days": 14, "dir": "/data/.dedupearr-holding", "bytes": 3 * 10**9, "bytes_h": "3 GB", "items": [
     {"id": 7, "orig": "/data/torrents/tv/Old.Show.S01E01.mkv", "title": "Old Show S01E01", "size": 2 * 10**9, "size_h": "2 GB", "kind": "bin", "why": "ORPHAN: Move the file into the holding bin.", "when": "2026-11-10T03:30", "days_left": 11.5, "note": ""},
     {"id": 8, "orig": "/data/usenet/movies/Some Film (2001).mkv", "title": "Some Film (2001)", "size": 10**9, "size_h": "1 GB", "kind": "bin", "why": "ORPHAN: Move the file into the holding bin.", "when": "2026-11-11T03:30", "days_left": 12.5, "note": ""}]}

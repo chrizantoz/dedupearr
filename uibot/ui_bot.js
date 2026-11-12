@@ -17,6 +17,8 @@ const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true
       if (u.includes("api/scan")) return body({ ok: true, note: "scan started; the page updates itself" });
       if (u.includes("api/fix")) return body({ ok: true, dry_run: true, kind: "remove", steps: ["Ask Deluge to remove the torrent without deleting its files.", "Move the file into the holding bin (nothing is deleted).", "Keep it for 14 days, then delete it, unless you press Undo."], frees: 1, frees_h: "4.2 MB", note: "Dry run: nothing was changed." });
       if (u.includes("api/restore")) { const id = JSON.parse(opts.body).id; const h = (data.state.holding || {}).items || []; const k = h.findIndex(x => x.id === id); if (k >= 0) h.splice(k, 1); return body({ ok: true, note: "Put back in its old place. The next scan judges it again." }); }
+      if (u.includes("api/setpassword")) return body({ ok: true, note: "Sign-in is on. This browser stays signed in; others are asked." });
+      if (u.includes("api/local_login")) return body({ ok: true, note: "saved" });
       if (u.includes("api/unignore")) return body({ ok: true, note: "back in Needs you" });
       if (u.includes("api/ignore")) { const p = JSON.parse(opts.body).path; const it = data.state.items.find(i => i.path === p); if (it) { it.ignored = true; it.needs_you = false; } return body({ ok: true, note: "hidden from Needs you; it stays in Everything" }); }
       return body({ error: "not found" }, 404);
@@ -141,6 +143,22 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   check("Space lists one row per kind of media", $$("#by-kind tr").length === Math.max(1, (data.state.categories || []).length), $$("#by-kind tr").length);
   check("runs table lists the scans", $$("#runs tr").length === data.about.runs.length);
   check("About lists the recent errors, or says there are none", (data.about.errors || []).length ? $("#errors").textContent.split("\n").length === data.about.errors.length : /No errors/.test($("#errors").textContent), $("#errors").textContent.slice(0, 80));
+  // Protect the page: open -> a form that posts the password; on -> the home-network box posts its change; set by the container -> no form
+  const A = data.state.auth || {}; const box = $("#authbox");
+  if (!A.enabled) {
+    $("#pw-user").value = "owner"; $("#pw-new").value = "a long password"; const n0 = posts.length; $("#pw-save").click(); await sleep(80);
+    check("open page: Turn sign-in on posts the user and password", /Turn sign-in on/.test(box.textContent + $("#pw-save").textContent) && posts.slice(n0).some(p => p.url.includes("api/setpassword") && JSON.parse(p.body).password === "a long password"), posts.slice(n0).map(p => p.url).join(","));
+  } else {
+    const cb = $("#lan-nologin");
+    check("sign-in on: the home-network box shows its state and the router warning", cb && cb.checked === !!A.local_no_login && /router forwards this port/.test(box.textContent), box.textContent.slice(0, 160));
+    if (A.source === "env") check("set by the container: the page offers no password form", !$("#pw-save") && /container/.test(box.textContent));
+    else {
+      const n0 = posts.length; cb.checked = !cb.checked; cb.dispatchEvent(new w.Event("change", { bubbles: true })); await sleep(80);
+      check("ticking the home-network box posts the change", posts.slice(n0).some(p => p.url.includes("api/local_login") && JSON.parse(p.body).on === cb.checked), posts.slice(n0).map(p => p.url).join(","));
+      const n1 = posts.length; $("#pw-off").click(); await sleep(80);
+      check("Turn sign-in off posts off with the current password field", posts.slice(n1).some(p => p.url.includes("api/setpassword") && JSON.parse(p.body).off === true && "current" in JSON.parse(p.body)));
+    }
+  }
   if (data.state.last_run && !/ok/.test(data.state.last_run.note)) check("a failed last scan shows as a warning in health", $$("#health li.warn").length > 0);
   // press everything else once
   for (const b of $$("button")) { try { b.click(); } catch (e) { errors.push("click " + (b.id || b.className) + ": " + e); } await sleep(5); }

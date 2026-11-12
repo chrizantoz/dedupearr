@@ -13,7 +13,7 @@
   <Date>2026-11-11</Date>
   <Changes>
 ### 2026-11-12
-- Sign-in: set AUTH_USER and AUTH_PASSWORD. LOCAL_NO_LOGIN=1 skips it for your own network while your domain still asks. The browser tab shows the Dedupearr icon.
+- Sign-in: set it on the About tab (Protect the page) or with AUTH_USER and AUTH_PASSWORD. "No sign-in on my own network" skips it at home while your domain still asks. The browser tab shows the Dedupearr icon.
 - Holding bin and Put back (Actions tab). With FIX_MODE=on, orphans can move to the holding bin; everything else stays a dry run. Fixes need the Data path read-write.
 - First template: phase 2 (scan, verdicts with the download clients' and arrs' knowledge, dry-run fix previews). Read-only by default.
   </Changes>
@@ -43,9 +43,9 @@
   <Config Name="SEED_MIN_DAYS" Target="SEED_MIN_DAYS" Default="14" Mode="" Description="your seeding rule: days a torrent must seed" Type="Variable" Display="always" Required="false" Mask="false">14</Config>
   <Config Name="SEED_RULE" Target="SEED_RULE" Default="both" Mode="" Description="both = ratio and days (private trackers), either = one of them is enough" Type="Variable" Display="always" Required="false" Mask="false">both</Config>
   <Config Name="FIX_MODE" Target="FIX_MODE" Default="dryrun" Mode="" Description="off, dryrun (show the steps, change nothing) or on (needs the Data path read-write; files go to the holding bin first)" Type="Variable" Display="always" Required="false" Mask="false">dryrun</Config>
-  <Config Name="AUTH_USER" Target="AUTH_USER" Default="" Mode="" Description="user name for the sign-in (empty with AUTH_PASSWORD = open page)" Type="Variable" Display="always" Required="false" Mask="false"></Config>
-  <Config Name="AUTH_PASSWORD" Target="AUTH_PASSWORD" Default="" Mode="" Description="password for the sign-in" Type="Variable" Display="always" Required="false" Mask="true"></Config>
-  <Config Name="LOCAL_NO_LOGIN" Target="LOCAL_NO_LOGIN" Default="0" Mode="" Description="1 = no sign-in for a browser on your own network that opens the address and port directly; through a domain or reverse proxy it still asks" Type="Variable" Display="always" Required="false" Mask="false">0</Config>
+  <Config Name="AUTH_USER" Target="AUTH_USER" Default="" Mode="" Description="optional: user name for the sign-in; wins over the one set on the About tab (and is the way back in if you forget it)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="AUTH_PASSWORD" Target="AUTH_PASSWORD" Default="" Mode="" Description="optional: password for the sign-in; wins over the one set on the About tab" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="LOCAL_NO_LOGIN" Target="LOCAL_NO_LOGIN" Default="" Mode="" Description="empty = the About tab decides; 1 = no sign-in for a browser on your own network that opens the address and port directly (a domain or reverse proxy still asks; leave it off if your router forwards the port straight to the app); 0 = always ask" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="TRUST_PROXY_AUTH" Target="TRUST_PROXY_AUTH" Default="0" Mode="" Description="1 = a reverse proxy's Remote-User header (Authelia, Authentik) counts as signed in" Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
   <Config Name="HOLD_DAYS" Target="HOLD_DAYS" Default="14" Mode="" Description="days a fixed file waits in the holding bin before it is deleted (Put back works until then)" Type="Variable" Display="advanced" Required="false" Mask="false">14</Config>
   <Config Name="HASH_BUDGET_MB" Target="HASH_BUDGET_MB" Default="20000" Mode="" Description="full checksums per scan; beyond it duplicates are called 'very likely' from samples" Type="Variable" Display="advanced" Required="false" Mask="false">20000</Config>

@@ -731,14 +731,42 @@ def about(c):
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
 
 # ------------------------------------------------------------------------------------------------------------------- sign-in
-# Off until AUTH_USER and AUTH_PASSWORD are set (the page is then open, the LAN model). With them set the page asks for a sign-in,
-# except: the container itself, a proxy's Remote-User header when TRUST_PROXY_AUTH=1, and with LOCAL_NO_LOGIN=1 a browser on your
-# own network that talks to the port directly (no reverse-proxy headers), so the domain asks and the LAN address does not.
+# Off until an account exists: set on the About tab (PBKDF2 hash in the database) or by AUTH_USER/AUTH_PASSWORD on the container
+# (the env wins). With an account the page asks for a sign-in, except: the container itself, a proxy's Remote-User header when
+# TRUST_PROXY_AUTH=1, and with "no sign-in on my own network" (About tab or LOCAL_NO_LOGIN=1) a browser on your own network that
+# talks to the port directly (no reverse-proxy headers), so the domain asks and the home address does not.
 AUTH_USER, AUTH_PASSWORD = _env("AUTH_USER"), os.environ.get("AUTH_PASSWORD", "")
 TRUST_PROXY_AUTH = _env("TRUST_PROXY_AUTH", "0") == "1"
-LOCAL_NO_LOGIN = _env("LOCAL_NO_LOGIN", "0") == "1"
+LOCAL_NO_LOGIN_ENV = _env("LOCAL_NO_LOGIN", "")   # 1 / 0 = set on the container and wins; empty = the About tab decides
 PROXY_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "Forwarded", "CF-Connecting-IP", "CF-Ray", "True-Client-IP", "Via", "Tailscale-Funnel-Request")
-def auth_on(): return bool(AUTH_USER and AUTH_PASSWORD) and not SANDBOX
+ROUTER_WARNING = "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."
+AUTH_CACHE = {}
+def _pbkdf(password, salt): return hashlib.pbkdf2_hmac("sha256", (password or "").encode(), salt.encode(), 200_000).hex()
+def account():
+    """{"user", "source": "env"|"page", "fp": a fingerprint that changes with the password} or None (open page)."""
+    if AUTH_USER and AUTH_PASSWORD: return {"user": AUTH_USER, "source": "env", "fp": hashlib.sha256(AUTH_PASSWORD.encode()).hexdigest()}
+    if "page" not in AUTH_CACHE:
+        c = db()
+        try: v = kv_get(c, "auth"); AUTH_CACHE["page"] = json.loads(v) if v else None
+        finally: c.close()
+    a = AUTH_CACHE["page"]
+    return {"user": a["user"], "source": "page", "fp": a["hash"], "salt": a["salt"]} if a else None
+def save_account(user, password):
+    """Set (or with an empty password remove) the page account. Returns the stored record, never the password."""
+    import secrets
+    c = db()
+    try:
+        if not password: c.execute("DELETE FROM kv WHERE k='auth'"); c.commit(); AUTH_CACHE["page"] = None; return None
+        if len(password) < 8: raise ValueError("the password needs at least 8 characters")
+        user = (user or "admin").strip()[:64] or "admin"; salt = secrets.token_hex(16); rec = {"user": user, "salt": salt, "hash": _pbkdf(password, salt)}
+        kv_set(c, "auth", json.dumps(rec)); AUTH_CACHE["page"] = rec; return rec
+    finally: c.close()
+def auth_on(): return account() is not None and not SANDBOX
+def local_no_login():
+    if LOCAL_NO_LOGIN_ENV in ("0", "1"): return LOCAL_NO_LOGIN_ENV == "1"
+    c = db()
+    try: return kv_get(c, "local_no_login") == "1"
+    finally: c.close()
 def direct_local(ip, headers):
     """A private, loopback or tailnet address AND none of the headers a reverse proxy, tunnel or CDN adds. Through a domain one of
     them is always there, so the domain keeps asking even though the proxy sits on a private address."""
@@ -756,35 +784,46 @@ def session_secret():
         return v
     finally: c.close()
 def session_cookie(days=30, now=None):
-    import hmac; exp = int((now or time.time()) + days * 86400); msg = f"{AUTH_USER}|{exp}"
-    return f"{msg}|{hmac.new(session_secret().encode(), (msg + '|' + hashlib.sha256(AUTH_PASSWORD.encode()).hexdigest()).encode(), 'sha256').hexdigest()}"
+    import hmac; a = account(); exp = int((now or time.time()) + days * 86400); msg = f"{a['user']}|{exp}"
+    return f"{msg}|{hmac.new(session_secret().encode(), (msg + '|' + a['fp']).encode(), 'sha256').hexdigest()}"
 def session_user(cookie_header):
-    """The signed-in user from the cookie, or None. Changing AUTH_PASSWORD signs every browser out."""
+    """The signed-in user from the cookie, or None. A new password signs every browser out."""
     import hmac
+    a = account()
+    if not a: return None
     for part in (cookie_header or "").split(";"):
         k, _, v = part.strip().partition("=")
         if k != "dedupearr_s" or v.count("|") != 2: continue
         user, exp, sig = v.split("|")
-        good = hmac.new(session_secret().encode(), f"{user}|{exp}|{hashlib.sha256(AUTH_PASSWORD.encode()).hexdigest()}".encode(), "sha256").hexdigest()
-        if hmac.compare_digest(sig, good) and user == AUTH_USER and exp.isdigit() and int(exp) > time.time(): return user
+        good = hmac.new(session_secret().encode(), f"{user}|{exp}|{a['fp']}".encode(), "sha256").hexdigest()
+        if hmac.compare_digest(sig, good) and user == a["user"] and exp.isdigit() and int(exp) > time.time(): return user
     return None
 def check_password(user, password):
-    import hmac; return hmac.compare_digest((user or "").encode(), AUTH_USER.encode()) & hmac.compare_digest((password or "").encode(), AUTH_PASSWORD.encode())
+    import hmac
+    a = account()
+    if not a: return False
+    pw = hashlib.sha256((password or "").encode()).hexdigest() if a["source"] == "env" else _pbkdf(password, a["salt"])
+    return hmac.compare_digest((user or "").encode(), a["user"].encode()) & hmac.compare_digest(pw.encode(), a["fp"].encode())
+def auth_state(who):
+    a = account()
+    return {"enabled": auth_on(), "user": a["user"] if a else "", "source": a["source"] if a else "", "local_no_login": local_no_login(),
+            "local_env": LOCAL_NO_LOGIN_ENV in ("0", "1"), "via": who if who in ("lan", "local") else "", "warning": ROUTER_WARNING}
 LOGIN_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dedupearr - sign in</title>__ICON__
 <style>:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1419;color:#e6e9ee;font:15px/1.5 system-ui,sans-serif}
 form{background:#141b22;border:1px solid #263039;border-radius:12px;padding:28px;width:min(340px,calc(100vw - 32px));box-sizing:border-box}h1{margin:0 0 16px;font-size:22px}
 label{display:block;margin:12px 0 4px;color:#b6c0cb}input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #263039;background:#0b0f14;color:#e6e9ee;font:inherit}
 button{margin-top:18px;width:100%;padding:10px;border:0;border-radius:8px;background:#38bdf8;color:#0b0f14;font:600 15px system-ui,sans-serif;cursor:pointer}.err{color:#f87171;margin:10px 0 0}.hint{color:#95a0ad;font-size:13px}</style></head>
 <body><form method="post" action="login"><h1>Dedupearr</h1><label for="u">User</label><input id="u" name="user" autocomplete="username" autofocus><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">__ERR__<button>Sign in</button>
-<p class="hint">The user and password are the container's <code>AUTH_USER</code> and <code>AUTH_PASSWORD</code>.</p></form></body></html>"""
+<p class="hint">Forgot it? Set <code>AUTH_USER</code> and <code>AUTH_PASSWORD</code> on the container: they replace the password set on the page.</p></form></body></html>"""
 
 # ------------------------------------------------------------------------------------------------------------------- http
 ICON_LINK = '<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACNElEQVR42u2bO27DMAyGRUFbhy5ZOmY0kCvkGEXOaPQYuUKAjBm9ePHQNe3QqkhcS9aDpF7m4iWO+f2kJFKWQXjY6+7tSxRg0ziA62+hFuhQMWTN8C4MUCu4azbIVuBNbLIVeBOjFI0bcES/62/e91xPe5b5ALDhQ2BTiTKNA6AIQAlNKUa0AC7gMY5S//80DgCY8NTjluK5QQLMneAAp/LBW4DHB6cAx/ZHYo/JXMQgEaBGUxiK5zAHJBEghRDYwzBYgOtp/88Z7CXKtQ6IESUqAzSczQGqiRMr2xS2MyX1AmgC2JyMEYRjTkEVADv6HOW2yhGcc8VR1OBUqwCWEF69wBpwDnWArw/RQ4C7CsRecWRJ8BTPb74ZkpTjsYS+QGE6sTVDWzPUeDNEAXuWB3G8X/IuhW3OxYhyloe/6+79M/9mCDMLNLy28eNFCCHQhciyGZrDazveL6LrM5oDyJqh32jP4SmaIYUJjxGVcQH+J+2XJ9rY7EPfEsOGp15xVA7gNnjTpIclBEsztBZZX/hkzVBIxDWcCRITPsQ/stfjLmAx8Mlej/usAjbAUPgsDkj4LEFLRY1JgDk89aZrtACujpoqO1uhU2Q3SNn+Um24AMfx2K6/WbNgKfpcG67AeT7YZdxzG+uusIadX1MatHBCPJsMyFIAnw+MarNpHGDLgE0A4fedXU3p/5QBLYnwyLoNAZMyLUR/MQNqFmGJzQpbS5VoC6oMvbEG+NUMKDUjfAL3DbciWR5v94twAAAAAElFTkSuQmCC">'
 UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
 class Handler(SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
-    def _json(self, code, obj):
+    def _json(self, code, obj, cookie=None):
         b = json.dumps(obj, default=str).encode(); self.send_response(code); self.send_header("Content-Type", "application/json")
+        if cookie: self.send_header("Set-Cookie", cookie)
         self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -797,7 +836,7 @@ class Handler(SimpleHTTPRequestHandler):
         u = session_user(self.headers.get("Cookie"))
         if u: return u
         if ip in ("127.0.0.1", "::1") and not any(self.headers.get(h) for h in PROXY_HEADERS): return "local"
-        if LOCAL_NO_LOGIN and direct_local(ip, self.headers): return "lan"
+        if direct_local(ip, self.headers) and local_no_login(): return "lan"
         if TRUST_PROXY_AUTH and (self.headers.get("Remote-User") or self.headers.get("X-Remote-User")): return self.headers.get("Remote-User") or self.headers.get("X-Remote-User")
         return None
     def _login_page(self, bad=False):
@@ -820,7 +859,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
             c = db()
             try:
-                if p == "/api/state": return self._json(200, dict(state(c), auth={"enabled": auth_on(), "via": who if who in ("lan", "local") else ""}))
+                if p == "/api/state": return self._json(200, dict(state(c), auth=auth_state(who)))
                 if p == "/api/about": return self._json(200, about(c))
                 if p == "/api/actions": return self._json(200, {"actions": actions(c), "fix_mode": FIX_MODE})
                 if p == "/health":
@@ -839,9 +878,32 @@ class Handler(SimpleHTTPRequestHandler):
                 secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").lower() == "https" else ""
                 return self._redirect("./", f"dedupearr_s={session_cookie()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000{secure}")
             time.sleep(1.5); log(f"sign-in refused from {self.client_address[0]}"); return self._login_page(bad=True)
-        if self._auth() is None: return self._json(401, {"error": "sign in first"})
+        who = self._auth()
+        if who is None: return self._json(401, {"error": "sign in first"})
         body = self._body()
         try:
+            if p in ("/api/setpassword", "/api/local_login") and SANDBOX: return self._json(403, {"error": SANDBOX_NOTE})
+            if p == "/api/setpassword":
+                a = account()
+                if a and a["source"] == "env": return self._json(409, {"error": "the sign-in is set by AUTH_USER and AUTH_PASSWORD on the container; change it there"})
+                if a and not check_password(a["user"], str(body.get("current") or "")): return self._json(403, {"error": "the current password is needed to change it"})
+                ip = self.client_address[0]
+                if not a and not (direct_local(ip, self.headers) or (TRUST_PROXY_AUTH and self.headers.get("Remote-User"))):
+                    return self._json(403, {"error": "set the first password from your own network (the page's address and port), not through the internet"})
+                try: rec = save_account(str(body.get("user") or "admin"), str(body.get("password") or "") if not body.get("off") else "")
+                except ValueError as e: return self._json(400, {"error": str(e)})
+                c = db()
+                try: record_action(c, "on", "settings", "sign-in", f"by {who or ip}", "sign-in turned on" if rec else "sign-in turned off")
+                finally: c.close()
+                if not rec: return self._json(200, {"ok": True, "note": "Sign-in is off: anyone who can reach the page can open it."})
+                secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").lower() == "https" else ""
+                return self._json(200, {"ok": True, "note": "Sign-in is on. This browser stays signed in; others are asked."}, cookie=f"dedupearr_s={session_cookie()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000{secure}")
+            if p == "/api/local_login":
+                if LOCAL_NO_LOGIN_ENV in ("0", "1"): return self._json(409, {"error": f"LOCAL_NO_LOGIN={LOCAL_NO_LOGIN_ENV} is set on the container; change it there"})
+                on = bool(body.get("on")); c = db()
+                try: kv_set(c, "local_no_login", "1" if on else "0"); record_action(c, "on", "settings", "sign-in", f"by {who or self.client_address[0]}", "no sign-in on the home network" if on else "sign-in everywhere")
+                finally: c.close()
+                return self._json(200, {"ok": True, "note": "On your own network the page opens without a sign-in; through your domain it still asks." if on else "The page asks for a sign-in everywhere, your own network too."})
             if SANDBOX and not sandbox_rate_ok((self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()):
                 return self._json(429, {"error": f"slow down: the demo allows {SANDBOX_RATE} clicks a minute per visitor"})
             if p == "/api/scan":

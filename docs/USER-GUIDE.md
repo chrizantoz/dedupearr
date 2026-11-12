@@ -51,7 +51,7 @@ Each row has one plain sentence that says what the file is and what would change
 - 💾 **Files**: the lead sentence, the five tiles (a tile is also a filter), the filter chips, the search box and the table.
 - 📊 **Space**: one bar for the whole share: library, waste you can get back, downloads still to decide, other files, free. Under it, every verdict with its count and the space it holds.
 - 🧺 **Actions**: the holding bin (every file a fix moved, why it went, the days it has left and a **Put back** button) and the actions log (every fix, dry run or done, with its result).
-- ℹ️ **About**: health lines (last scan, errors in the last 24 hours, the read-only reminder), the settings in force, every scan with its duration, recent errors and the log.
+- ℹ️ **About**: **Protect the page** (set a user and password so the page asks for a sign-in; tick **No sign-in on my own network** to skip it at home while your domain still asks, but not if your router forwards the port straight to Dedupearr), health lines (last scan, errors in the last 24 hours, the read-only reminder), the settings in force, every scan with its duration, recent errors and the log.
 
 ## 🔎 Filters above the list
 
