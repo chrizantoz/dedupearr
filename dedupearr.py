@@ -105,13 +105,13 @@ def title_key(path):
     """A loose identity for 'same title': normalised words before the year (movies) or before SxxEyy (episodes), plus that year or episode.
     'Scary.Movie.2026.1080p.BluRay.x264-EniaHD.mkv' and 'Scary Movie (2026) {tmdb-1273221} - {edition-Theatrical Cut} [Bluray-1080p]-playHD.mkv' -> 'scary movie 2026'."""
     name = os.path.splitext(os.path.basename(path))[0]
-    norm = lambda t: " ".join(re.sub(r"[^a-z0-9]+", " ", t.lower()).split())
+    norm = lambda t: " ".join(re.sub(r"\b(19|20)\d\d\b", " ", re.sub(r"[^a-z0-9]+", " ", t.lower())).split())   # the year is dropped from an episode's title part: 'Bleach (2004) - S17E46' and 'Bleach.S17E46' are one show
     m = re.search(r"\b(s\d{1,2})[ ._-]?(e\d{1,3})\b", name, re.I)
     if m: return norm(name[:m.start()]) + " " + m.group(1).lower() + m.group(2).lower()
     m = re.search(r"(?<![a-z])(e\d{2,3})\b", name, re.I)   # anime style '- E04'
     if m: return norm(name[:m.start()]) + " e?" + m.group(1).lower()[1:]
     m = re.search(r"\b(19\d\d|20\d\d)\b", name)
-    if m and m.start() > 0: return norm(name[:m.start()]) + " " + m.group(1)
+    if m and m.start() > 0: return norm(name[:m.start()]) + " " + m.group(1)   # a movie keeps its year: Heat 1995 is not Heat 2024
     return None
 
 def same_title(a, b):
