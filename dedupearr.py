@@ -511,13 +511,13 @@ def actions(c, limit=100):
     return [dict(r) | {"when": datetime.datetime.fromtimestamp(r["ts"]).isoformat(timespec="minutes")} for r in c.execute("SELECT * FROM action ORDER BY ts DESC LIMIT ?", (limit,))]
 
 def state(c):
-    items = []
+    items = []; known = bool(client_status())   # once per page, not once per row (the perf budget caught the per-row lookup)
     ignored = {r["path"] for r in c.execute("SELECT path FROM ignored")}
     for r in c.execute("SELECT * FROM verdict ORDER BY wasted DESC, size DESC, path"):
-        v = dict(r); v["clients_known"] = bool(client_status()); v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])
+        v = dict(r); v["clients_known"] = known; v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])
         v["needs_you"] = v["code"] in NEEDS_YOU and v["path"] not in ignored; v["ignored"] = v["path"] in ignored
         v["twin_title"] = friendly_title(v["twin"]) if v["twin"] else None
-        ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and client_status())) else ""
+        ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and known)) else ""
         v["removable"] = bool(v.get("removable")) and v["needs_you"]
         v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
         items.append(v)
@@ -535,7 +535,7 @@ def state(c):
     now_bytes = sum(v["wasted"] for v in items if v["removable"] and v["code"] != "DOWNLOAD_UNMATCHED")
     lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies, leftovers, orphans and old recycle-bin files"
             + (f", and another {human(decide)} of downloads is still undecided" if decide else "") + "."
-            + (f" {human(now_bytes)} of it can go right now by your seeding rule." if now_bytes and client_status() else "")) if last else "No scan yet. Press Scan now, or wait for the night."
+            + (f" {human(now_bytes)} of it can go right now by your seeding rule." if now_bytes and known else "")) if last else "No scan yet. Press Scan now, or wait for the night."
     return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True, "sandbox": SANDBOX, "sandbox_note": SANDBOX_NOTE if SANDBOX else "",
             "roots": SCAN_ROOTS, "disks": disks, "scanning": {k: SCANNING[k] for k in ("on", "phase", "files", "started")},
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
