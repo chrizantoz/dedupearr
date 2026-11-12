@@ -1,0 +1,19 @@
+name: ✨ Idea or feature
+description: Something Dedupearr should see, explain or fix.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you hit with your storage
+      description: What takes space it should not, or what do you keep checking by hand?
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: What Dedupearr could do about it
+  - type: input
+    id: roadmap
+    attributes:
+      label: Is it already on the roadmap?
+      description: Check ROADMAP.md and mention the item code if so (e.g. P2.1).

@@ -1,0 +1,31 @@
+name: 🐛 Something is wrong
+description: A verdict that is not right, a number that does not add up, or an error.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: In your own words. What did you expect instead? If a verdict is wrong, paste the row's evidence line.
+    validations: { required: true }
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: About tab, the Log box at the bottom (or `docker logs dedupearr --tail 50`). Remove anything private.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Image / version
+      placeholder: ghcr.io/chrizantoz/dedupearr:latest pulled on 2026-11-12
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it run?
+      options: [Unraid, docker compose, something else]
+  - type: input
+    id: layout
+    attributes:
+      label: How are the library and the download folder mounted?
+      placeholder: one share /mnt/user/data with media/ and torrents/ inside, mounted at /data

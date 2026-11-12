@@ -40,6 +40,15 @@ RECYCLE_DAYS = int(os.environ.get("RECYCLE_DAYS", "30"))
 MIN_SIZE_MB = int(os.environ.get("MIN_SIZE_MB", "50"))
 HASH_BUDGET_MB = int(os.environ.get("HASH_BUDGET_MB", "20000"))   # full checksums per scan; beyond it duplicates are called "very likely" from the samples
 SCAN_TIME = os.environ.get("SCAN_TIME", "04:30")
+SANDBOX = os.environ.get("SANDBOX", "0") == "1"   # the public demo: a fake disk, anyone may click, resets on the hour; writes are rate-limited per visitor
+SANDBOX_RATE = int(os.environ.get("SANDBOX_RATE", "60"))
+SANDBOX_NOTE = "This is the public demo on a fake disk: every button works and it resets on the hour. Install Dedupearr to point it at your own library."
+_RATE = {}
+def sandbox_rate_ok(ip, limit=None):
+    """At most `limit` writes per visitor per minute on the public demo."""
+    limit = limit or SANDBOX_RATE; minute = int(time.time() // 60); key = (ip, minute)
+    for k in [k for k in _RATE if k[1] < minute - 1]: _RATE.pop(k, None)
+    _RATE[key] = _RATE.get(key, 0) + 1; return _RATE[key] <= limit
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts", ".wmv", ".webm", ".mpg", ".mpeg", ".flv", ".iso"}
 SAMPLE = 1024 * 1024
 LOG = []; ERRORS = []   # ERRORS: what went wrong, for the About page ("Recent errors") and the health line
@@ -275,7 +284,7 @@ def state(c):
     reclaim = bytes_by.get("DUPLICATE_COPY", 0) + bytes_by.get("DUPLICATE_HEADER", 0) + bytes_by.get("BIN_OLD", 0); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0)
     lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies and old recycle-bin files"
             + (f", and another {human(decide)} of downloads has no match yet" if decide else "") + ".") if last else "No scan yet. Press Scan now, or wait for the night."
-    return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True,
+    return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True, "sandbox": SANDBOX, "sandbox_note": SANDBOX_NOTE if SANDBOX else "",
             "roots": SCAN_ROOTS, "disks": disks, "scanning": {k: SCANNING[k] for k in ("on", "phase", "files", "started")},
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
@@ -292,6 +301,7 @@ def about(c):
     errs = errors_recent()
     health.append({"level": "warn", "text": f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours; the newest: {errs[-1]['text'][:120]}"} if errs else {"level": "ok", "text": "No errors in the last 24 hours."})
     health.append({"level": "ok", "text": "Phase 1 is read-only: nothing is moved, linked or deleted."})
+    if SANDBOX: health.append({"level": "ok", "text": SANDBOX_NOTE})
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
                          "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME},
@@ -330,6 +340,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         p = self.path.split("?")[0]; body = self._body()
         try:
+            if SANDBOX and not sandbox_rate_ok((self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()):
+                return self._json(429, {"error": f"slow down: the demo allows {SANDBOX_RATE} clicks a minute per visitor"})
             if p == "/api/scan":
                 if SCANNING["on"]: return self._json(200, {"ok": True, "note": "a scan is already running"})
                 threading.Thread(target=scan, daemon=True).start(); return self._json(200, {"ok": True, "note": "scan started; the page updates itself"})

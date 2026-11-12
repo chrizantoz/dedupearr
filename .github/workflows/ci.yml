@@ -12,7 +12,7 @@ jobs:
       - name: "code quality: compile, pyflakes, ruff"
         run: python -m py_compile dedupearr.py tests/*.py && pip install -q pyflakes ruff && python -m pyflakes dedupearr.py tests/*.py && ruff check dedupearr.py tests
       - name: "backend: plain language, verdicts on the fake disk, API contract (records the UI fixtures)"
-        run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py
+        run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py && python tests/sandbox_mode.py
       - name: "robustness: random disks, chaos, performance budget, one mutant a day"
         run: python tests/fuzz_disk.py 25 ${{ github.run_number }} && python tests/chaos.py && python tests/perf_budget.py && python tests/mutation_check.py
       - uses: actions/setup-node@v4
@@ -24,6 +24,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with: { name: ui-screenshots, path: uibot/screens/*.png, if-no-files-found: ignore }
+      - run: python uibot/make_site.py /tmp/site && test -s /tmp/site/index.html && test -s /tmp/site/demo.html
       - run: docker build -q -t dedupearr:ci .
       - uses: aquasecurity/trivy-action@v0.36.0
         with: { image-ref: "dedupearr:ci", severity: "CRITICAL,HIGH", ignore-unfixed: true, exit-code: "1", format: "table" }

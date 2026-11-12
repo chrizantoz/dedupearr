@@ -2,12 +2,13 @@
 
 ![Dedupearr - the truth about your storage](docs/banner.png)
 
-[![CI](https://github.com/chrizantoz/dedupearr/actions/workflows/ci.yml/badge.svg)](https://github.com/chrizantoz/dedupearr/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/chrizantoz/dedupearr?include_prereleases&label=release)](https://github.com/chrizantoz/dedupearr/releases) [![licence](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE) [![runs on](https://img.shields.io/badge/runs%20on-Docker%20%7C%20Unraid%20%7C%20compose-2ea44f)](docs/INSTALL.md) [![image](https://img.shields.io/badge/ghcr.io-chrizantoz%2Fdedupearr-555)](https://github.com/chrizantoz/dedupearr/pkgs/container/dedupearr)
+[![CI](https://github.com/chrizantoz/dedupearr/actions/workflows/ci.yml/badge.svg)](https://github.com/chrizantoz/dedupearr/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/chrizantoz/dedupearr?include_prereleases&label=release)](https://github.com/chrizantoz/dedupearr/releases) [![licence](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE) [![runs on](https://img.shields.io/badge/runs%20on-Docker%20%7C%20Unraid%20%7C%20compose-2ea44f)](docs/INSTALL.md) [![demo](https://img.shields.io/badge/demo-try%20it-2ea44f)](https://dedupearr-demo.chrizantoz.com) [![image](https://img.shields.io/badge/ghcr.io-chrizantoz%2Fdedupearr-555)](https://github.com/chrizantoz/dedupearr/pkgs/container/dedupearr)
 
 **Dedupearr tells you the truth about your storage.** If you run **Sonarr**, **Radarr** and a torrent client, your download folder is supposed to share its files with your library through *hardlinks*, so seeding costs no extra space. One wrong path, one copy instead of a link, one upgrade that left the old torrent behind, and the same movie sits on your disk twice. Dedupearr walks every video file each night and says what it *is*, with the evidence, in one plain sentence.
 
 Think of it as the companion to [Auditarr](https://github.com/chrizantoz/auditarr): Auditarr asks *is this file good?*, Dedupearr asks *is this file real and needed?*
 
+- 🧪 **Try it in your browser:** **[dedupearr-demo.chrizantoz.com](https://dedupearr-demo.chrizantoz.com)** is the real app on a fake disk with one of every situation; every button works and it resets on the hour. A static copy of the page lives on the [project site](https://chrizantoz.github.io/dedupearr/).
 - 📘 **New here? Start with the [User guide](docs/USER-GUIDE.md)**: a plain-language tour of the page and every button.
 - 📋 **Every verdict it gives and every button it has:** [FEATURES.md](FEATURES.md)
 - 📰 **What changed and when:** [CHANGELOG.md](CHANGELOG.md)
@@ -51,6 +52,10 @@ Every night it records every video file's inode, link count and size. Names that
 - Sonarr and/or Radarr with a torrent client, writing to a folder Dedupearr can read. Nothing is connected in phase 1; it only reads the disk.
 - Your library **and** your download folder visible through **one mount** (`/data` below), the way the arr guides set it up. If they are two mounts, a hardlink between them cannot exist and Dedupearr cannot see that two names are one file.
 - About two minutes to fill in the `docker run` command below.
+
+### Try it without installing
+
+**[dedupearr-demo.chrizantoz.com](https://dedupearr-demo.chrizantoz.com)** runs the real app on the fake disk below, on its own network, and rebuilds itself every hour. `sandbox/run.sh up` starts the same playground on your machine.
 
 ### Try it without a library
 

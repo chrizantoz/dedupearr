@@ -39,5 +39,5 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 
 - 🔴 **P4.1** Setup wizard: client and arr addresses, the shared-mount test ("your library and downloads are two mounts; here is the one-line change").
 - 🔴 **P4.2** Unraid cache/array awareness (optional read-only `/mnt/disk*` mounts) so cross-disk cases get "move then link" or no fix.
-- 🔴 **P4.3** Unraid Apps template, public demo in sandbox mode with the fake disk, hourly reset.
+- 🟡 **P4.3** Unraid Apps template (template file exists; Community Apps submission is the owner's step). 🟢 Public demo in sandbox mode with the fake disk and hourly reset: https://dedupearr-demo.chrizantoz.com (2026-11-12); project site with a static copy of the page on GitHub Pages.
 - 🔴 **P4.4** Soak gate and staged promotion like Auditarr's.
