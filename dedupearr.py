@@ -58,7 +58,8 @@ ARRS = {a: {"url": _env(f"{a.upper()}_URL").rstrip("/"), "key": _env(f"{a.upper(
 CLIENTS = {"Deluge": {"url": _env("DELUGE_URL").rstrip("/"), "password": _env("DELUGE_PASSWORD")},
            "NZBGet": {"url": _env("NZBGET_URL").rstrip("/"), "user": _env("NZBGET_USER"), "password": _env("NZBGET_PASSWORD")},
            "qBittorrent": {"url": _env("QBIT_URL").rstrip("/"), "user": _env("QBIT_USER"), "password": _env("QBIT_PASSWORD")}}
-SEED_MIN_RATIO = float(_env("SEED_MIN_RATIO", "1.0") or 1.0); SEED_MIN_DAYS = float(_env("SEED_MIN_DAYS", "7") or 7)   # "seeding is done" = either reached
+SEED_MIN_RATIO = float(_env("SEED_MIN_RATIO", "1.0") or 1.0); SEED_MIN_DAYS = float(_env("SEED_MIN_DAYS", "14") or 14)
+SEED_RULE = _env("SEED_RULE", "both").lower()   # "both": ratio AND days must be reached (safe for private trackers, the default); "either": one of them is enough
 CLIENT_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("CLIENT_PATH_MAP").split(",") if "=" in x]   # clientpath=ourpath when a client sees the files under another path
 CLIENT_STATUS = {}   # "Deluge" -> {"ok": bool, "n": int, "note": str}; shown on About
 
@@ -170,7 +171,8 @@ def seeding_done(ci):
     if ci is None: return True
     if not ci.get("finished"): return False
     if ci.get("client") == "NZBGet": return True
-    return ci.get("ratio", 0) >= SEED_MIN_RATIO or ci.get("seeding_days", 0) >= SEED_MIN_DAYS
+    r_ok, d_ok = ci.get("ratio", 0) >= SEED_MIN_RATIO, ci.get("seeding_days", 0) >= SEED_MIN_DAYS
+    return (r_ok or d_ok) if SEED_RULE == "either" else (r_ok and d_ok)
 
 def client_text(ci):
     if ci is None: return "not in any download client"
@@ -433,7 +435,7 @@ def seed_sentence(ci):
     if ci is None: return "Nothing holds it, so it can go now."
     if ci.get("client") == "NZBGet": return "It came from usenet, so there is no seeding to wait for; it can go now."
     if seeding_done(ci): return f"{ci['client']} has seeded it to ratio {ci['ratio']:.1f} over {ci['seeding_days']:.0f} days, past your rule, so it can go now."
-    return f"{ci['client']} is still seeding it (ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days); your rule keeps it until ratio {SEED_MIN_RATIO:g} or {SEED_MIN_DAYS:g} days."
+    return f"{ci['client']} is still seeding it (ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days); your rule keeps it until ratio {SEED_MIN_RATIO:g} {'or' if SEED_RULE == 'either' else 'and'} {SEED_MIN_DAYS:g} days."
 def sentence(v):
     code, size, twin = v["code"], human(v["size"]), v.get("twin")
     t = friendly_title(twin) if twin else ""
@@ -485,7 +487,7 @@ def state(c):
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
-            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS}}
+            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}}
 
 def about(c):
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone(); health = []
@@ -505,7 +507,7 @@ def about(c):
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
                          "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME,
-                         "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "CLIENT_PATH_MAP": CLIENT_PATH_MAP,
+                         "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "SEED_RULE": SEED_RULE, "CLIENT_PATH_MAP": CLIENT_PATH_MAP,
                          "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}}},
             "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}

@@ -124,7 +124,7 @@ Phase 1 reads its settings from the environment; the About tab shows them (never
 | `DELUGE_URL`, `DELUGE_PASSWORD` | empty | Deluge web address (`http://host:8112`) and its web password |
 | `NZBGET_URL`, `NZBGET_USER`, `NZBGET_PASSWORD` | empty | NZBGet address (`http://host:6789`) and its control login |
 | `QBIT_URL`, `QBIT_USER`, `QBIT_PASSWORD` | empty | qBittorrent web address and login |
-| `SEED_MIN_RATIO`, `SEED_MIN_DAYS` | `1.0`, `7` | Your seeding rule: a torrent is "done" when either is reached; then a leftover or second copy "can go now" |
+| `SEED_MIN_RATIO`, `SEED_MIN_DAYS`, `SEED_RULE` | `1.0`, `14`, `both` | Your seeding rule: a torrent is "done" when the ratio **and** the days are reached (`both`, safe for private trackers) or when one of them is (`either`); then a leftover or second copy "can go now" |
 | `CLIENT_PATH_MAP` | empty | `clientpath=ourpath,…` when a client sees the files under another path than Dedupearr does |
 | `PORT` | `3092` | Web port |
 

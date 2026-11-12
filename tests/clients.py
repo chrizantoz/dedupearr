@@ -8,7 +8,7 @@ s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.clos
 now = time.time(); P = fake_disk.build(DATA, now)
 P.update(mock_clients.extra_files(DATA, fake_disk.blob)); world = mock_clients.world_for(P, DATA)
 srv = mock_clients.start(world, port)
-os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100", SEED_MIN_RATIO="1.0", SEED_MIN_DAYS="7", CLIENT_TIMEOUT="5", **mock_clients.env_for(M))
+os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100", SEED_MIN_RATIO="1.0", SEED_MIN_DAYS="14", SEED_RULE="both", CLIENT_TIMEOUT="5", **mock_clients.env_for(M))
 import dedupearr as d  # noqa: E402
 results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:240]}]"))
@@ -20,7 +20,7 @@ check("identical copy seeding past the rule: Stored twice, can go now", code("du
 check("header-differs copy still seeding: Stored twice, header differs, not removable, the sentence names the rule", code("hdr_dl") == "DUPLICATE_HEADER" and not by[P["hdr_dl"]]["removable"] and "still seeding" in by[P["hdr_dl"]]["plain"] and "ratio 1" in by[P["hdr_dl"]]["plain"], by.get(P["hdr_dl"], {}).get("plain", "")[-200:])
 check("the download Sonarr imported, whose library file was replaced = Leftover, removable by nothing holding it? no: Deluge does not know it, so it can go", code("unmatched") == "LEFTOVER" and by[P["unmatched"]]["removable"], by.get(P["unmatched"]))
 check("the leftover's evidence names the arr, the date and the replaced file", "Sonarr imported it on 2026-10-14" in by[P["unmatched"]]["evidence"] and "replaced" in by[P["unmatched"]]["evidence"], by[P["unmatched"]]["evidence"])
-check("Scary Movie: different release, Deluge seeding past the ratio rule = can go now", code("other_dl") == "DOWNLOAD_OTHER_RELEASE" and by[P["other_dl"]]["removable"] and "ratio 1.3" in by[P["other_dl"]]["plain"], by.get(P["other_dl"], {}).get("plain"))
+check("Scary Movie: different release, ratio reached but only 3 of 14 days = still seeding under the 'both' rule", code("other_dl") == "DOWNLOAD_OTHER_RELEASE" and not by[P["other_dl"]]["removable"] and "ratio 1 and 14 days" in by[P["other_dl"]]["plain"], by.get(P["other_dl"], {}).get("plain", "")[-160:])
 check("a same-size lookalike that no client and no arr knows = Orphan (nothing holds it)", code("look_dl") == "ORPHAN" and by[P["look_dl"]]["wasted"] == by[P["look_dl"]]["size"] and by[P["look_dl"]]["removable"], by.get(P["look_dl"]))
 check("software torrent seeding, never imported = Seeding only, not waste, not needs-you", code("soft") == "SEEDING_ONLY" and by[P["soft"]]["wasted"] == 0 and not by[P["soft"]]["needs_you"], by.get(P["soft"]))
 check("usenet download imported by Sonarr, library file gone = Leftover with 'no seeding to wait for'", code("usenet") == "LEFTOVER" and "usenet" in by[P["usenet"]]["plain"] and by[P["usenet"]]["removable"], by.get(P["usenet"], {}).get("plain"))

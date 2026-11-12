@@ -78,7 +78,7 @@ One scan at `SCAN_TIME` (04:30 by default), and one at start when the last scan 
 
 **What does "Download without a match" mean?** No library file has the same content. It may be an old release that an upgrade replaced, a download that never imported, or something you keep only for seeding. Phase 2 asks the download client and the arrs and says which.
 
-**What is "your seeding rule"?** Two numbers in the settings, `SEED_MIN_RATIO` (1.0 by default) and `SEED_MIN_DAYS` (7). A torrent counts as done seeding when either is reached. Set them to what your trackers expect. Usenet downloads have no seeding, so they can go as soon as the arr has imported them.
+**What is "your seeding rule"?** Two numbers and a word in the settings: `SEED_MIN_RATIO` (1.0 by default), `SEED_MIN_DAYS` (14) and `SEED_RULE` (`both`: the ratio and the days must both be reached, which is what private trackers expect; `either`: one of them is enough, fine for public trackers). Set them to what your trackers expect. Usenet downloads have no seeding, so they can go as soon as the arr has imported them.
 
 **Does it slow my server down?** A scan of 15,000 files takes under a minute and reads only file metadata plus a few megabytes of each file that looks like a copy. Full checksums are capped per night by `HASH_BUDGET_MB`.
 
