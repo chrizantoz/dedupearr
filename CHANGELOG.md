@@ -1,5 +1,7 @@
 # Changelog
 
+All dates 2026. Image: `ghcr.io/chrizantoz/dedupearr`.
+
 ## Unreleased — phase 1, scan and tell (2026-11-11)
 
 - First version. Scans the library and download folders, groups names that share one inode, confirms identical copies with checksums, judges recycle bins, and explains every file in one plain sentence with its evidence.

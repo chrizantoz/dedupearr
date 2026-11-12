@@ -70,6 +70,9 @@ const rawCode = /\b[A-Z]{3,}_[A-Z_]{3,}\b/;
     await page.locator("nav button[data-tab=about]").click(); await page.waitForSelector("#health li", { timeout: 10000 }).catch(() => {});
     check(`${label}: About shows health lines`, (await page.locator("#health li").count()) > 0);
     await page.screenshot({ path: path.join(__dirname, "screens", `about-${label}.png`), fullPage: true });
+    await page.emulateMedia({ colorScheme: "dark" }); await page.goto(base); await page.locator("nav button[data-tab=files]").click(); await page.waitForSelector("#rows tr", { timeout: 15000 });   // dark variant for the README and the banner (the page remembers the last tab, so go back to Files)
+    await page.screenshot({ path: path.join(__dirname, "screens", `files-${label}-dark.png`), fullPage: true });
+    await page.locator("nav button[data-tab=space]").click(); await page.waitForTimeout(150); await page.screenshot({ path: path.join(__dirname, "screens", `space-${label}-dark.png`), fullPage: true });
     check(`${label}: no JavaScript errors`, jsErrors.length === 0, jsErrors.join(" | "));
     await page.close();
   }

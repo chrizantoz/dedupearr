@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-label="Every night Dedupearr reads the disk, groups names that share one file, compares the rest by checksum and gives each file one verdict with its evidence" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="15">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#95a0ad"/></marker></defs>
+  <rect width="1200" height="300" fill="#0f1419"/>
+  <g fill="none" stroke="#95a0ad" stroke-width="1.5" marker-end="url(#a)">
+    <path d="M250 90H330"/><path d="M250 150H330"/><path d="M250 210H330"/>
+    <path d="M530 150H610"/>
+    <path d="M790 90H870"/><path d="M790 150H870"/><path d="M790 210H870"/>
+  </g>
+  <g stroke="#263039" stroke-width="1.5" fill="#141b22">
+    <rect x="40" y="62" width="210" height="56" rx="10"/><rect x="40" y="122" width="210" height="56" rx="10"/><rect x="40" y="182" width="210" height="56" rx="10"/>
+    <rect x="330" y="62" width="200" height="176" rx="12" stroke="#38bdf8" stroke-width="2" fill="#10303f"/>
+    <rect x="610" y="100" width="180" height="100" rx="12"/>
+    <rect x="870" y="62" width="290" height="56" rx="10" stroke="#86efac"/><rect x="870" y="122" width="290" height="56" rx="10" stroke="#fbbf24"/><rect x="870" y="182" width="290" height="56" rx="10" stroke="#95a0ad"/>
+  </g>
+  <g fill="#e6e9ee">
+    <text x="56" y="86" font-weight="600">Library folder</text><text x="56" y="106" font-size="12" fill="#95a0ad">media/movies, media/tv …</text>
+    <text x="56" y="146" font-weight="600">Download folder</text><text x="56" y="166" font-size="12" fill="#95a0ad">torrents, downloads …</text>
+    <text x="56" y="206" font-weight="600">Recycle bins</text><text x="56" y="226" font-size="12" fill="#95a0ad">.trash, .recycle …</text>
+    <text x="430" y="96" text-anchor="middle" font-weight="600">1 · Read the disk</text>
+    <text x="346" y="124" font-size="12.5">inode, link count, size, mtime</text>
+    <text x="346" y="146" font-size="12.5">names sharing an inode = one file</text>
+    <text x="346" y="168" font-size="12.5">same size, different inode = compare</text>
+    <text x="346" y="190" font-size="12.5">first, middle, last MB, then full</text>
+    <text x="346" y="222" font-size="12" fill="#95a0ad">15,000 files in under a minute</text>
+    <text x="700" y="140" text-anchor="middle" font-weight="600">2 · One verdict</text>
+    <text x="700" y="160" text-anchor="middle" font-size="12.5">per file, with</text><text x="700" y="178" text-anchor="middle" font-size="12.5">its evidence</text>
+    <text x="886" y="86" font-weight="600" fill="#86efac">Real copy · Only copy</text><text x="886" y="106" font-size="12" fill="#95a0ad">hardlinked or single, nothing wasted</text>
+    <text x="886" y="146" font-weight="600" fill="#fbbf24">Stored twice · No match</text><text x="886" y="166" font-size="12" fill="#95a0ad">space you can get back, or decide on</text>
+    <text x="886" y="206" font-weight="600" fill="#cbd5e1">Old bin file · Looks alike</text><text x="886" y="226" font-size="12" fill="#95a0ad">past your rule, or just a coincidence</text>
+    <text x="600" y="278" text-anchor="middle" font-size="12.5" fill="#95a0ad">Phase 1 is read-only. Phase 2 asks the torrent client and the arrs; phase 3 adds the fixes behind a dry run and a 14-day undo.</text>
+  </g>
+</svg>
