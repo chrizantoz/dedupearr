@@ -14,7 +14,7 @@ A plain-language tour: what the app does, what you see on the page, and what eve
 
 Every night it walks every video file in your library and your download folder and works out what each file *is*: the real copy, a hardlink that costs nothing, a second copy that wastes space, a download nothing in the library matches, or an old recycle-bin entry. It shows the evidence (inode, link count, size, checksum) in one sentence you can read without knowing what an inode is.
 
-Phase 1 changes nothing on disk. It looks and tells.
+Out of the box it changes nothing on disk: fixes run as a dry run that shows their steps, until you switch them on.
 
 ## ☕ Your daily routine
 
@@ -61,8 +61,9 @@ Each row has one plain sentence that says what the file is and what would change
 - **Scan now** (header): starts a scan straight away; the header shows the phase and the file count while it runs, and the page refreshes itself.
 - **Ignore** (on a row that needs a decision): hides the row from *Needs a decision*; it stays under *Everything* with an *ignored* chip and an **Un-ignore** button.
 - **evidence** (under a sentence): shows the numbers behind the verdict.
+- **Preview fix** (on a row that can be fixed): shows the exact steps the fix would take and the space it frees. In dry run, the default, that is all it does; nothing is moved. When fixes are switched on, the same button carries them out, through the holding bin with a 14-day undo.
 
-That is all of them. Phase 3 adds the fix buttons, each with a dry run and a 14-day undo.
+That is all of them.
 
 ## 🌙 What runs by itself every night
 

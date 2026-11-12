@@ -7,7 +7,7 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-11 22:45, 20 files in 0 s."
+   "text": "Last scan 2026-11-11 23:30, 20 files in 0 s."
   },
   {
    "level": "ok",
@@ -35,7 +35,7 @@
   },
   {
    "level": "ok",
-   "text": "Read-only: nothing is moved, linked or deleted."
+   "text": "Fixes run as a dry run: every 'Preview fix' shows the exact steps and nothing is moved, linked or deleted."
   }
  ],
  "settings": {
@@ -53,22 +53,25 @@
   "SEED_MIN_DAYS": 14.0,
   "SEED_RULE": "both",
   "CLIENT_PATH_MAP": [],
+  "FIX_MODE": "dryrun",
+  "HOLDING_DIR": "/tmp/dedupearr-api-103r8gpb/data/.dedupearr-holding",
+  "HOLD_DAYS": 14,
   "connections": {
-   "sonarr": "http://127.0.0.1:57059/sonarr",
-   "radarr": "http://127.0.0.1:57059/radarr",
+   "sonarr": "http://127.0.0.1:54877/sonarr",
+   "radarr": "http://127.0.0.1:54877/radarr",
    "whisparr": "not set",
    "sportarr": "not set",
    "lidarr": "not set",
-   "Deluge": "http://127.0.0.1:57059/deluge",
-   "NZBGet": "http://127.0.0.1:57059/nzbget",
-   "qBittorrent": "http://127.0.0.1:57059/qbit"
+   "Deluge": "http://127.0.0.1:54877/deluge",
+   "NZBGet": "http://127.0.0.1:54877/nzbget",
+   "qBittorrent": "http://127.0.0.1:54877/qbit"
   }
  },
  "runs": [
   {
    "id": 1,
-   "started": 1794455108.207196,
-   "finished": 1794455108.3197744,
+   "started": 1794457817.751145,
+   "finished": 1794457817.8709776,
    "files": 20,
    "bytes": 60817408,
    "wasted": 26214400,
@@ -76,8 +79,8 @@
   }
  ],
  "log": [
-  "2026-11-11 22:45:08 Dedupearr dev listening on :38375",
-  "2026-11-11 22:45:08 scan done: 20 files, 60.8 MB, 26.2 MB that can come back"
+  "2026-11-11 23:30:17 Dedupearr dev listening on :57441",
+  "2026-11-11 23:30:17 scan done: 20 files, 60.8 MB, 26.2 MB that can come back"
  ],
  "errors": [],
  "links": {

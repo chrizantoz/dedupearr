@@ -2,7 +2,9 @@
 
 All dates 2026. Image: `ghcr.io/chrizantoz/dedupearr`.
 
-## Unreleased — phase 2, ask the apps (2026-11-12)
+## Unreleased — phase 2, ask the apps; phase 3 begins (2026-11-12)
+
+- Phase 3 starts as a dry run: every fixable row has a **Preview fix** button that shows the exact steps (relink, remove through the client, holding bin, empty an old bin) and the space it would free; `FIX_MODE=dryrun` is the default and nothing is moved, linked or deleted. Every preview is written to the actions log (`/api/actions`). A fix is refused while a scan runs. The real fixes arrive one at a time behind that switch, each with a holding bin and a 14-day undo.
 
 - Download-client and arr readers: Deluge, NZBGet and qBittorrent (seeding state, ratio, time, label, per file) and the arrs' import history (which download became which library file). A download now becomes **Leftover from an upgrade**, **Orphan** or **Seeding only**, each row shows the client's state, and a **can go now** chip appears when your seeding rule (`SEED_MIN_RATIO` and `SEED_MIN_DAYS`, both by default; `SEED_RULE=either` relaxes it) is met or nothing holds the file. Still read-only; the fixes are phase 3.
 - Sportarr and Lidarr are read like Sonarr and Radarr (`SPORTARR_URL` / `LIDARR_URL` and their keys).

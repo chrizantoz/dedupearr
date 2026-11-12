@@ -22,6 +22,8 @@ Verdict codes (never shown raw; see LABEL and sentence()):
   LEFTOVER           an arr imported this download and the library has since replaced or rewritten that file  wasted size
   ORPHAN             no client knows the file and no arr imported it                                wasted size
   SEEDING_ONLY       a client seeds it and no arr ever imported it (software, extras, kept torrents) wasted 0
+Phase 3 (in progress): /api/fix shows the plan for a row (relink, remove through the client, holding bin, empty an old bin). FIX_MODE=dryrun by default:
+nothing is touched; the real fixes arrive one at a time behind that switch, each with a holding bin and a 14-day undo.
   BIN_OLD            in a recycle bin longer than RECYCLE_DAYS                                     wasted size
   BIN_RECENT         in a recycle bin, within the rule                                            wasted 0
   OTHER              in a folder that is neither library, downloads nor recycle bin               wasted 0
@@ -179,6 +181,8 @@ def client_text(ci):
     if ci["client"] == "NZBGet": return f"NZBGet: {ci['state']}" + (f" ({ci['label']})" if ci.get("label") else "")
     return f"{ci['client']}: {ci['state']}, ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days" + (f", label {ci['label']}" if ci.get("label") else "")
 
+FIX_MODE = (_env("FIX_MODE", "dryrun") or "dryrun").lower()   # off | dryrun | on. Phase 3: every fix shows its steps first; "on" arrives step by step and stays off until you turn it on
+HOLDING_DIR = _env("HOLDING_DIR") or (SCAN_ROOTS[0].rstrip("/") + "/.dedupearr-holding"); HOLD_DAYS = int(_env("HOLD_DAYS", "14") or 14)
 VIDEO_EXT = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts", ".wmv", ".webm", ".mpg", ".mpeg", ".flv", ".iso"}
 SAMPLE = 1024 * 1024
 LOG = []; ERRORS = []   # ERRORS: what went wrong, for the About page ("Recent errors") and the health line
@@ -200,6 +204,7 @@ def db():
     CREATE TABLE IF NOT EXISTS run(id INTEGER PRIMARY KEY AUTOINCREMENT, started REAL, finished REAL, files INTEGER, bytes INTEGER, wasted INTEGER, note TEXT);
     CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
     CREATE TABLE IF NOT EXISTS ignored(path TEXT PRIMARY KEY, at REAL);
+    CREATE TABLE IF NOT EXISTS action(ts REAL, mode TEXT, kind TEXT, path TEXT, detail TEXT, result TEXT, undo TEXT);
     """)
     cols = {r[1] for r in c.execute("PRAGMA table_info(verdict)")}
     for col, typ in (("client", "TEXT"), ("removable", "INTEGER")):
@@ -457,6 +462,42 @@ def sentence(v):
     if code == "BIN_RECENT": return f"In a recycle bin, within your {RECYCLE_DAYS}-day rule. It will show up here when the rule runs out."
     return "Not inside a folder I recognise as library, downloads or a recycle bin. Name the folder in the settings and it will be judged on the next scan."
 
+# -------------------------------------------------------------------------------------------------------------- fixes (phase 3)
+FIXABLE = {"DUPLICATE_COPY": "relink", "DUPLICATE_HEADER": "remove", "DOWNLOAD_OTHER_RELEASE": "remove", "LEFTOVER": "remove", "ORPHAN": "bin", "BIN_OLD": "empty"}
+def plan_fix(v):
+    """The exact steps a fix would take for this file, in plain words, before anything is touched. Returns (kind, steps, frees) or (None, [reason], 0)."""
+    code = v["code"]; ci = v.get("client") if isinstance(v.get("client"), dict) else (json.loads(v["client"]) if v.get("client") else None)
+    kind = FIXABLE.get(code)
+    if not kind: return None, ["Nothing to fix here: this file is fine or needs no change."], 0
+    if not v.get("removable", True) and kind in ("remove", "relink"): return None, [seed_sentence(ci)], 0
+    hold = f"{HOLDING_DIR}/{os.path.basename(v['path'])}"
+    if kind == "relink": steps = ["Check both checksums again right before the change.", f"Move this copy into the holding bin at {hold} (nothing is deleted).", f"Create a hardlink from the library file {friendly_title(v['twin'] or '')} at this download's name, so the client keeps seeding the same bytes.",
+                                 "Confirm the link count is now 2 and the client still sees the file; if anything fails, put the copy back.", f"Keep the moved copy for {HOLD_DAYS} days, then delete it, unless you press Undo."]
+    elif kind == "remove": steps = ([f"Ask {ci['client']} to remove the torrent '{ci['name']}' without deleting its files." if ci and ci.get("client") != "NZBGet" else ("Remove the entry from NZBGet's history." if ci else "No client holds this file, so there is nothing to tell a client.")]
+                                    + [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."])
+    elif kind == "bin": steps = [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."]
+    else: steps = [f"The file has sat in its recycle bin longer than your {RECYCLE_DAYS}-day rule.", "Delete it for good (it was already thrown away once; there is no second bin)."]
+    return kind, steps, v.get("wasted") or 0
+
+def record_action(c, mode, kind, path, detail, result, undo=None):
+    c.execute("INSERT INTO action(ts,mode,kind,path,detail,result,undo) VALUES(?,?,?,?,?,?,?)", (time.time(), mode, kind, path, detail[:500], result[:500], json.dumps(undo) if undo else None)); c.commit()
+
+def ui_fix(c, path):
+    """POST /api/fix: show the plan (dry run) or carry it out (on). Phase 3 ships the 'on' branch fix by fix; until then every call is a dry run."""
+    if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so a fix never races the scan"}
+    r = c.execute("SELECT * FROM verdict WHERE path=?", (path,)).fetchone()
+    if not r: return 404, {"error": "that file is not in the last scan"}
+    v = dict(r); v["removable"] = bool(v.get("removable"))
+    kind, steps, frees = plan_fix(v)
+    if not kind: return 400, {"error": steps[0]}
+    if FIX_MODE == "off": return 403, {"error": "fixes are switched off (FIX_MODE=off); the plan is still shown on the row"}
+    if FIX_MODE == "dryrun" or True:   # the 'on' branch lands with P3.1; a dry run is all that can happen today
+        record_action(c, "dryrun", kind, path, " | ".join(steps), f"dry run: would free {human(frees)}")
+        return 200, {"ok": True, "dry_run": True, "kind": kind, "steps": steps, "frees": frees, "frees_h": human(frees), "note": f"Dry run: nothing was changed. This fix would free {human(frees)} in {len(steps)} steps."}
+
+def actions(c, limit=100):
+    return [dict(r) | {"when": datetime.datetime.fromtimestamp(r["ts"]).isoformat(timespec="minutes")} for r in c.execute("SELECT * FROM action ORDER BY ts DESC LIMIT ?", (limit,))]
+
 def state(c):
     items = []
     ignored = {r["path"] for r in c.execute("SELECT path FROM ignored")}
@@ -466,6 +507,7 @@ def state(c):
         v["twin_title"] = friendly_title(v["twin"]) if v["twin"] else None
         ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and CLIENT_STATUS)) else ""
         v["removable"] = bool(v.get("removable")) and v["needs_you"]
+        v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
         items.append(v)
     counts, bytes_by = {}, {}
     for v in items:
@@ -487,7 +529,7 @@ def state(c):
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
-            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}}
+            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "holding_dir": HOLDING_DIR}
 
 def about(c):
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone(); health = []
@@ -502,12 +544,12 @@ def about(c):
     for name, st_ in sorted(CLIENT_STATUS.items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
     if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
     elif not CLIENT_STATUS and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
-    health.append({"level": "ok", "text": "Read-only: nothing is moved, linked or deleted."})
+    health.append({"level": "ok", "text": {"off": "Fixes are switched off.", "dryrun": "Fixes run as a dry run: every 'Preview fix' shows the exact steps and nothing is moved, linked or deleted.", "on": "Fixes are on: files move to the holding bin first and can be undone for %d days." % HOLD_DAYS}.get(FIX_MODE, FIX_MODE)})
     if SANDBOX: health.append({"level": "ok", "text": SANDBOX_NOTE})
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
                          "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME,
-                         "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "SEED_RULE": SEED_RULE, "CLIENT_PATH_MAP": CLIENT_PATH_MAP,
+                         "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "SEED_RULE": SEED_RULE, "CLIENT_PATH_MAP": CLIENT_PATH_MAP, "FIX_MODE": FIX_MODE, "HOLDING_DIR": HOLDING_DIR, "HOLD_DAYS": HOLD_DAYS,
                          "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}}},
             "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
@@ -533,6 +575,7 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 if p == "/api/state": return self._json(200, state(c))
                 if p == "/api/about": return self._json(200, about(c))
+                if p == "/api/actions": return self._json(200, {"actions": actions(c), "fix_mode": FIX_MODE})
                 if p == "/health":
                     last = c.execute("SELECT finished, note FROM run ORDER BY id DESC LIMIT 1").fetchone()
                     ok = last and last["note"] == "ok" and time.time() - last["finished"] < 2 * 86400
@@ -549,6 +592,13 @@ class Handler(SimpleHTTPRequestHandler):
             if p == "/api/scan":
                 if SCANNING["on"]: return self._json(200, {"ok": True, "note": "a scan is already running"})
                 threading.Thread(target=scan, daemon=True).start(); return self._json(200, {"ok": True, "note": "scan started; the page updates itself"})
+            if p == "/api/fix":
+                path = str(body.get("path") or "")
+                if not path: return self._json(400, {"error": "which file?"})
+                c = db()
+                try: code, obj = ui_fix(c, path)
+                finally: c.close()
+                return self._json(code, obj)
             if p in ("/api/ignore", "/api/unignore"):
                 path = str(body.get("path") or "")
                 if not path: return self._json(400, {"error": "which file?"})

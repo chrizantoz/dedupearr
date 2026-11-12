@@ -11,6 +11,7 @@ const fixtures = {}; if (!LIVE) for (const n of ["state", "about"]) fixtures[n] 
 const ignored = new Set();   // the fake server remembers Ignore, like the real one
 const server = http.createServer((req, res) => {
   const u = req.url.split("?")[0]; res.setHeader("Content-Type", "application/json");
+  if (req.method === "POST" && u === "/api/fix") return res.end(JSON.stringify({ ok: true, dry_run: true, kind: "remove", steps: ["Move the file into the holding bin (nothing is deleted).", "Keep it for 14 days, then delete it, unless you press Undo."], frees: 1, frees_h: "4.2 MB", note: "Dry run: nothing was changed." }));
   if (req.method === "POST") {
     let raw = ""; req.on("data", c => { raw += c; });
     return req.on("end", () => {
@@ -59,6 +60,9 @@ const rawCode = /\b[A-Z]{3,}_[A-Z_]{3,}\b/;
       await page.locator("#chips button[data-filter=all]").click(); await page.waitForTimeout(150);
       const chips = await page.locator("#rows .chip", { hasText: /^can go now$/ }).count();
       check(`${label}: persona: 'can go now' chips match what the seeding rule frees`, chips === Math.min(stateNow, 500), `${chips} vs ${stateNow}`);
+      // persona 2c: "what would the fix do?" -> Preview fix shows steps and says nothing changed (a dry run is safe even on a live server)
+      const pf = page.locator("#rows button[data-fix]").first();
+      if (await pf.count()) { await pf.click(); await page.waitForSelector("#rows .plan:not([hidden]) li", { timeout: 10000 }).catch(() => {}); check(`${label}: persona: Preview fix lists the steps and says nothing changed`, (await page.locator("#rows .plan:not([hidden]) li").count()) > 0 && /nothing changed/i.test(await page.locator("#rows .plan:not([hidden])").first().textContent()), await page.locator("#rows .plan:not([hidden])").first().textContent().catch(() => "no plan")); }
       // persona 3: "this one is fine, stop showing it" (a write; skipped on a live server unless allowed)
       await page.locator("#chips button[data-filter=needs]").click(); await page.waitForTimeout(150);
       const before = await page.locator("#rows tr[id^=r-]").count(); const ign = page.locator("#rows button[data-ign]").first();

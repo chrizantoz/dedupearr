@@ -15,6 +15,7 @@ const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true
     if (opts && opts.method === "POST") {
       posts.push({ url: u, body: opts.body || "" });
       if (u.includes("api/scan")) return body({ ok: true, note: "scan started; the page updates itself" });
+      if (u.includes("api/fix")) return body({ ok: true, dry_run: true, kind: "remove", steps: ["Ask Deluge to remove the torrent without deleting its files.", "Move the file into the holding bin (nothing is deleted).", "Keep it for 14 days, then delete it, unless you press Undo."], frees: 1, frees_h: "4.2 MB", note: "Dry run: nothing was changed." });
       if (u.includes("api/unignore")) return body({ ok: true, note: "back in Needs you" });
       if (u.includes("api/ignore")) { const p = JSON.parse(opts.body).path; const it = data.state.items.find(i => i.path === p); if (it) { it.ignored = true; it.needs_you = false; } return body({ ok: true, note: "hidden from Needs you; it stays in Everything" }); }
       return body({ error: "not found" }, 404);
@@ -70,6 +71,14 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   const drawn = items.slice(0, 500).filter(i => i.removable && i.needs_you).length;   // the page draws the first 500 items in the data's order
   check("'can go now' chips = rows the seeding rule frees", $$("#rows .chip").filter(c => c.textContent === "can go now").length === drawn, `${$$("#rows .chip").filter(c => c.textContent === "can go now").length} vs ${drawn}`);
   if (canGo.length) check("the lead says how much can go right now", /can go right now/.test($("#lead").textContent), $("#lead").textContent.slice(0, 160));
+  // phase 3: Preview fix shows a plan and changes nothing
+  const fixables = items.filter(i => i.fixable);
+  const drawnFix = items.slice(0, 500).filter(i => i.fixable).length;
+  check("'Preview fix' is offered exactly on the fixable rows", $$("#rows button[data-fix]").length === drawnFix, `${$$("#rows button[data-fix]").length} vs ${drawnFix}`);
+  if (fixables.length) {
+    const fb = $("#rows button[data-fix]"); const fpath = fb.dataset.fix; fb.click(); await sleep(80);
+    check("Preview fix posts the path and shows the dry-run steps under the row", posts.some(p => p.url.includes("api/fix") && p.body.includes(JSON.stringify(fpath))) && $$("#rows .plan:not([hidden]) li").length > 0 && /nothing changed/i.test($("#rows .plan:not([hidden])").textContent), $("#rows .plan:not([hidden])") ? $("#rows .plan:not([hidden])").textContent.slice(0, 120) : "no plan box");
+  }
   // ignore -> item leaves Needs you
   $("#chips button[data-filter=needs]").click(); await sleep(10);
   if (needs) {

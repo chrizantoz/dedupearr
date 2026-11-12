@@ -47,6 +47,7 @@ The left column is the internal code (handy when searching the code or the API);
 | Scan now | header | starts a scan; the header shows phase and file count while it runs |
 | Ignore / Un-ignore | a row that needs a decision | hides the row from Needs a decision (it stays under Everything with an *ignored* chip) and brings it back |
 | evidence | under every sentence | shows the inodes, link counts, sizes, checksum result and the other file's path |
+| Preview fix | a fixable row | shows the exact steps (relink / remove through the client / holding bin / empty an old bin) and the space freed; a dry run by default (`FIX_MODE=dryrun`), logged in `/api/actions` |
 
 Phase 3 adds: Relink, Remove old torrent, Empty bin, Move to holding bin, Undo, Apply to all with this cause.
 
@@ -64,4 +65,6 @@ Phase 3 adds: Relink, Remove old torrent, Empty bin, Move to holding bin, Undo, 
 | `GET /api/about` | version, health lines, settings, scans, recent errors, log |
 | `POST /api/scan` | starts a scan |
 | `POST /api/ignore` `{"path": …}` / `POST /api/unignore` | hide or show a row |
+| `POST /api/fix` `{"path": …}` | the fix plan for a row (dry run: steps and space freed; refused during a scan or when the seeding rule says wait) |
+| `GET /api/actions` | the actions log |
 | `GET /health` | 200 when the last scan is recent and succeeded, else 503 |
