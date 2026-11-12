@@ -67,7 +67,8 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   $("#chips button[data-filter=all]").click(); await sleep(10);
   const withClient = items.filter(i => i.client_text), canGo = items.filter(i => i.removable && i.needs_you);
   if (withClient.length) check("every row with a client state shows it under the sentence", withClient.filter(i => $(`#r-${i.path.replace(/[^a-z0-9]/gi, "-")}`)).every(i => $(`#r-${i.path.replace(/[^a-z0-9]/gi, "-")}`).textContent.includes(i.client_text)), withClient.length);
-  check("'can go now' chips = rows the seeding rule frees", $$("#rows .chip").filter(c => c.textContent === "can go now").length === Math.min(500, canGo.length), `${$$("#rows .chip").filter(c => c.textContent === "can go now").length} vs ${canGo.length}`);
+  const drawn = items.slice(0, 500).filter(i => i.removable && i.needs_you).length;   // the page draws the first 500 items in the data's order
+  check("'can go now' chips = rows the seeding rule frees", $$("#rows .chip").filter(c => c.textContent === "can go now").length === drawn, `${$$("#rows .chip").filter(c => c.textContent === "can go now").length} vs ${drawn}`);
   if (canGo.length) check("the lead says how much can go right now", /can go right now/.test($("#lead").textContent), $("#lead").textContent.slice(0, 160));
   // ignore -> item leaves Needs you
   $("#chips button[data-filter=needs]").click(); await sleep(10);
