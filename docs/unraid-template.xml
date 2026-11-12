@@ -1,19 +1,23 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>dedupearr</Name>
+  <Name>Dedupearr</Name>
   <Repository>ghcr.io/chrizantoz/dedupearr:latest</Repository>
   <Registry>https://github.com/chrizantoz/dedupearr/pkgs/container/dedupearr</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/chrizantoz/dedupearr/issues</Support>
+  <Support>https://forums.unraid.net/topic/201247-support-auditarr-nightly-quality-control-for-your-sonarr-radarr-bazarr-plex-library/</Support>
   <Project>https://github.com/chrizantoz/dedupearr</Project>
   <Overview>Dedupearr: the truth about your storage. For every video file under your media and download folders it tells you what the file is - the real copy, a hardlink that costs nothing, a second copy that wastes space, a download nothing in the library matches, or an old recycle-bin entry - with the evidence in one plain sentence. Phase 1 is read-only: it looks and tells. Companion to Auditarr.</Overview>
   <Category>MediaApp:Video Tools:Utilities</Category>
+  <Date>2026-11-11</Date>
+  <Changes>
+### 2026-11-12
+- First template: phase 2 (scan, verdicts with the download clients' and arrs' knowledge, dry-run fix previews). Read-only by default.
+  </Changes>
   <WebUI>http://[IP]:[PORT:3092]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/chrizantoz/dedupearr/main/docs/unraid-template.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/chrizantoz/unraid-templates/main/dedupearr.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/chrizantoz/dedupearr/main/docs/icon.png</Icon>
-  <ExtraParams>--read-only=false</ExtraParams>
   <Requires>Mount the library and the download folders through ONE path (/data below), as the arr guides recommend; otherwise hardlinks cannot be seen.</Requires>
   <Config Name="Web port" Target="3092" Default="3092" Mode="tcp" Description="" Type="Port" Display="always" Required="true" Mask="false">3092</Config>
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/dedupearr" Mode="rw" Description="database and logs" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/dedupearr</Config>
@@ -21,6 +25,22 @@
   <Config Name="SCAN_ROOTS" Target="SCAN_ROOTS" Default="/data" Mode="" Description="comma-separated folders to scan (inside /data)" Type="Variable" Display="always" Required="false" Mask="false">/data</Config>
   <Config Name="RECYCLE_DAYS" Target="RECYCLE_DAYS" Default="30" Mode="" Description="recycle-bin files older than this are waste" Type="Variable" Display="always" Required="false" Mask="false">30</Config>
   <Config Name="SCAN_TIME" Target="SCAN_TIME" Default="04:30" Mode="" Description="nightly scan time (container TZ)" Type="Variable" Display="always" Required="false" Mask="false">04:30</Config>
+  <Config Name="SONARR_URL" Target="SONARR_URL" Default="" Mode="" Description="e.g. http://192.168.1.10:8989 (lets Dedupearr read Sonarr's import history)" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="SONARR_APIKEY" Target="SONARR_APIKEY" Default="" Mode="" Description="Sonarr → Settings → General → Security → API Key" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="RADARR_URL" Target="RADARR_URL" Default="" Mode="" Description="e.g. http://192.168.1.10:7878" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="RADARR_APIKEY" Target="RADARR_APIKEY" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="DELUGE_URL" Target="DELUGE_URL" Default="" Mode="" Description="Deluge web address, e.g. http://192.168.1.10:8112" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="DELUGE_PASSWORD" Target="DELUGE_PASSWORD" Default="" Mode="" Description="Deluge web password" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="QBIT_URL" Target="QBIT_URL" Default="" Mode="" Description="qBittorrent web address, e.g. http://192.168.1.10:8080" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="QBIT_USER" Target="QBIT_USER" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="QBIT_PASSWORD" Target="QBIT_PASSWORD" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="NZBGET_URL" Target="NZBGET_URL" Default="" Mode="" Description="NZBGet address, e.g. http://192.168.1.10:6789" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="NZBGET_USER" Target="NZBGET_USER" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="NZBGET_PASSWORD" Target="NZBGET_PASSWORD" Default="" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="SEED_MIN_RATIO" Target="SEED_MIN_RATIO" Default="1.0" Mode="" Description="your seeding rule: ratio a torrent must reach" Type="Variable" Display="always" Required="false" Mask="false">1.0</Config>
+  <Config Name="SEED_MIN_DAYS" Target="SEED_MIN_DAYS" Default="14" Mode="" Description="your seeding rule: days a torrent must seed" Type="Variable" Display="always" Required="false" Mask="false">14</Config>
+  <Config Name="SEED_RULE" Target="SEED_RULE" Default="both" Mode="" Description="both = ratio and days (private trackers), either = one of them is enough" Type="Variable" Display="always" Required="false" Mask="false">both</Config>
+  <Config Name="FIX_MODE" Target="FIX_MODE" Default="dryrun" Mode="" Description="off, dryrun (show the steps, change nothing) or on" Type="Variable" Display="always" Required="false" Mask="false">dryrun</Config>
   <Config Name="HASH_BUDGET_MB" Target="HASH_BUDGET_MB" Default="20000" Mode="" Description="full checksums per scan; beyond it duplicates are called 'very likely' from samples" Type="Variable" Display="advanced" Required="false" Mask="false">20000</Config>
   <Config Name="TZ" Target="TZ" Default="America/Winnipeg" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">America/Winnipeg</Config>
 </Container>

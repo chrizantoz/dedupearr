@@ -10,8 +10,8 @@ If your library and your downloads live on two different shares, hardlinks betwe
 
 ## Unraid
 
-1. Docker tab → **Add Container** → at the bottom, paste the template URL: `https://raw.githubusercontent.com/chrizantoz/dedupearr/main/docs/unraid-template.xml`.
-2. Set **TZ**, check the **Data** path (the share that holds both library and downloads, read-only), leave everything else.
+1. **Apps** tab → search *Dedupearr* → Install (the template lives in [chrizantoz/unraid-templates](https://github.com/chrizantoz/unraid-templates), the same feed as Auditarr). If it has not shown up on your server yet: Docker tab → **Add Container** → paste the template URL `https://raw.githubusercontent.com/chrizantoz/unraid-templates/main/dedupearr.xml`.
+2. Set **TZ**, check the **Data** path (the share that holds both library and downloads, read-only), and fill in what you have: Sonarr/Radarr address and key, your download client, your seeding rule. Leave the rest.
 3. Apply, then open the Web UI (port 3092). The first scan starts on its own; 15,000 files take under a minute.
 4. Read the sentence at the top of **Files**: it says how big your library is and how much is wasted.
 
