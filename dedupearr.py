@@ -95,7 +95,9 @@ def friendly_title(path):
     name = os.path.splitext(os.path.basename(path))[0]
     name = re.sub(r"\{[^}]*\}|\[[^\]]*\]", " ", name)   # arr-style tags: {tmdb-123}, {edition-…}, [Bluray-1080p][x264]
     name = re.sub(r"[._]+", " ", name).strip()
-    name = _QUALITY.sub("", name).strip(" -")
+    name = _QUALITY.sub("", name)
+    name = re.sub(r"(\s*-\s*)+-?[A-Za-z0-9]{2,12}$", "", name) if re.search(r"\s-\s*-?[A-Za-z0-9]{2,12}$", name) else name   # a trailing release group after a dash: '- -playHD', '-GRP'
+    name = re.sub(r"(\s*-\s*)+$", "", name).strip(" -")
     name = re.sub(r"\s*-\s*$", "", name)
     return re.sub(r"\s{2,}", " ", name) or os.path.basename(path)
 
