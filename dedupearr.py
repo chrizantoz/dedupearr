@@ -138,7 +138,7 @@ CATEGORIES = [("tv", "TV shows"), ("anime", "Anime"), ("movies", "Movies"), ("ad
 CAT_LABEL = dict(CATEGORIES)
 APP_CATEGORY = {"sonarr": "tv", "radarr": "movies", "whisparr": "adult", "sportarr": "sports", "lidarr": "music"}
 CAT_WORDS = [("anime", {"anime"}), ("adult", {"xxx", "adult", "whisparr", "porn", "nsfw"}), ("sports", {"sport", "sports", "sportarr"}),
-             ("music", {"music", "lidarr", "audio", "flac"}), ("tv", {"tv", "series", "shows", "sonarr", "television", "episodes"}),
+             ("music", {"music", "lidarr"}), ("tv", {"tv", "series", "shows", "sonarr", "television", "episodes"}),
              ("movies", {"movie", "movies", "film", "films", "radarr", "cinema"})]
 
 TWIN_IS_EVIDENCE = {"REAL_COPY", "LINKED_SEED", "LIBRARY_TWIN", "DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER"}   # a lookalike's twin is only a size coincidence
@@ -183,9 +183,12 @@ def category_of(path, ctx, twin=None, ci=None, ai=None):
     if ai and ai.get("app") in APP_CATEGORY:
         lab = words_category((ci or {}).get("label"))
         return "anime" if lab == "anime" else APP_CATEGORY[ai["app"]]
-    for text in ((ci or {}).get("label"), os.path.dirname(twin) if twin else None, os.path.dirname(path)):
-        cat = words_category(text)
-        if cat: return cat
+    cat = words_category((ci or {}).get("label"))
+    if cat: return cat
+    for p in (twin, path):   # folders from the top down: 'completed/tv' decides before a release name that happens to say FLAC or Sports
+        for seg in (os.path.dirname(p).split("/") if p else []):
+            cat = words_category(seg)
+            if cat: return cat
     return "other"
 
 def read_arr_imports():

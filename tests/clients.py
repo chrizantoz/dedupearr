@@ -28,6 +28,8 @@ check("the same title in Sonarr's standard folder is TV shows, not Anime", cat("
 check("a usenet download Sonarr imported is TV shows", by[P["usenet"]]["category"] == "tv", by[P["usenet"]]["category"])
 check("a software torrent no arr knows is Other", by[P["soft"]]["category"] == "other", by[P["soft"]]["category"])
 check("every row has a category and the totals add up", all(i["category"] in d.CAT_LABEL for i in S["items"]) and sum(cc["files"] for cc in S["categories"]) == len(S["items"]), S["categories"])
+check("a release name never outvotes its folder: FLAC and Dual Audio anime in completed/tv is TV, not Music (seen on the owner's server 2026-11-12)",
+      [d.category_of(x, {}) for x in ("/data/completed/tv/Demon.Slayer.S05E08.REPACK.1080p.FLAC.2.0.AVC.REMUX-X/a.mkv", "/data/completed/tv/Bleach.S13E33.Dual.Audio-ZR/b.mkv", "/data/torrents/music/Album/c.mkv")] == ["tv", "tv", "music"])
 check("client labels and folder words map to categories", [d.words_category(t) for t in ("tv-sonarr", "Anime", "xxx", "radarr", "software", "")] == ["tv", "anime", "adult", "movies", None, None])
 check("Scary Movie: different release, ratio reached but only 3 of 14 days = still seeding under the 'both' rule", code("other_dl") == "DOWNLOAD_OTHER_RELEASE" and not by[P["other_dl"]]["removable"] and "ratio 1 and 14 days" in by[P["other_dl"]]["plain"], by.get(P["other_dl"], {}).get("plain", "")[-160:])
 check("a same-size lookalike that no client and no arr knows = Orphan (nothing holds it)", code("look_dl") == "ORPHAN" and by[P["look_dl"]]["wasted"] == by[P["look_dl"]]["size"] and by[P["look_dl"]]["removable"], by.get(P["look_dl"]))
