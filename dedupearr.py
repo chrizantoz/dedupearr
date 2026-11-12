@@ -497,7 +497,8 @@ def about(c):
     errs = errors_recent()
     health.append({"level": "warn", "text": f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours; the newest: {errs[-1]['text'][:120]}"} if errs else {"level": "ok", "text": "No errors in the last 24 hours."})
     for name, st_ in sorted(CLIENT_STATUS.items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
-    if not CLIENT_STATUS: health.append({"level": "warn", "text": "No download client or arr is connected yet, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
+    if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
+    elif not CLIENT_STATUS and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
     health.append({"level": "ok", "text": "Read-only: nothing is moved, linked or deleted."})
     if SANDBOX: health.append({"level": "ok", "text": SANDBOX_NOTE})
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
