@@ -23,9 +23,9 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 
 Why this phase matters on the owner's server (2026-11-12): 357 GB of header-differs copies and most of the 162 GB of unmatched downloads have one fix, "remove the download once seeding is done", and that needs the torrent client's answer. P2.1 is the next piece of work.
 
-- 🔴 **P2.1** qBittorrent reader (torrent list, content paths, seeding state, ratio, tracker) → an unmatched download becomes "still seeding", "leftover" (library has a newer file for the same title) or "orphan" (no torrent, no arr record).
+- 🔴 **P2.1** Download-client readers, in the order the owner's arrs actually use them (checked 2026-11-12: Sonarr, Radarr and Whisparr all send to **NZBGet** (usenet, primary) and **Deluge** (torrents, inside the VPN container); rTorrent and Transmission are configured but disabled): **NZBGet** first (JSON-RPC: history and its import status, so a finished usenet download still on disk is a leftover or a failed import, never "seeding"), then **Deluge** (web JSON API: torrent list, content paths, seeding state, ratio, tracker), then **qBittorrent** for everyone else. An unmatched download becomes "still seeding", "leftover" (the library has a newer file for the same title) or "orphan" (no client knows it, no arr record).
 - 🔴 **P2.2** Sonarr and Radarr readers: import history (copy vs hardlink), upgrades, current file per episode/movie; the "cause" column (e.g. "Radarr copied instead of linking: separate mounts").
-- 🔴 **P2.3** Deluge, rTorrent, Transmission readers; recorded real API shapes in a fake stack, like Auditarr's.
+- 🔴 **P2.3** rTorrent (XML-RPC) and Transmission readers; recorded real API shapes for every client in a fake stack, like Auditarr's.
 - 🔴 **P2.4** Living next to Auditarr: read Auditarr's actions log; files Auditarr remuxed or rewrote get "rewritten by Auditarr, torrent still needed for seeding" and never a relink offer; Auditarr's `.trash` is a recycle bin.
 - 🔴 **P2.5** Plex reader: which library files Plex actually indexes, so a "library" folder Plex ignores is flagged.
 - 🔴 **P2.6** Phone digest (ntfy): space to get back, what needs you.
