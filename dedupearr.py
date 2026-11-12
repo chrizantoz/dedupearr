@@ -23,7 +23,7 @@ Verdict codes (never shown raw; see LABEL and sentence()):
   ORPHAN             no client knows the file and no arr imported it                                wasted size
   SEEDING_ONLY       a client seeds it and no arr ever imported it (software, extras, kept torrents) wasted 0
 Phase 3 (in progress): /api/fix shows the plan for a row (relink, remove through the client, holding bin, empty an old bin). FIX_MODE=dryrun by default:
-nothing is touched; the real fixes arrive one at a time behind that switch, each with a holding bin and a 14-day undo.
+nothing is touched. With FIX_MODE=on the fixes in LIVE_KINDS run (P3.1: orphans move to the holding bin); /api/restore puts a held file back for HOLD_DAYS.
   BIN_OLD            in a recycle bin longer than RECYCLE_DAYS                                     wasted size
   BIN_RECENT         in a recycle bin, within the rule                                            wasted 0
   OTHER              in a folder that is neither library, downloads nor recycle bin               wasted 0
@@ -277,6 +277,8 @@ def db():
     CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
     CREATE TABLE IF NOT EXISTS ignored(path TEXT PRIMARY KEY, at REAL);
     CREATE TABLE IF NOT EXISTS action(ts REAL, mode TEXT, kind TEXT, path TEXT, detail TEXT, result TEXT, undo TEXT);
+    CREATE TABLE IF NOT EXISTS held(id INTEGER PRIMARY KEY AUTOINCREMENT, orig TEXT, held TEXT, size INTEGER, dev INTEGER, ino INTEGER, at REAL, kind TEXT, why TEXT,
+        restored REAL, purged REAL, note TEXT);
     """)
     cols = {r[1] for r in c.execute("PRAGMA table_info(verdict)")}
     for col, typ in (("client", "TEXT"), ("removable", "INTEGER"), ("category", "TEXT")):
@@ -384,7 +386,9 @@ def walk(roots):
                 for e in it:
                     try:
                         if e.is_symlink(): continue
-                        if e.is_dir(follow_symlinks=False): stack.append(e.path); continue
+                        if e.is_dir(follow_symlinks=False):
+                            if os.path.normpath(e.path) != os.path.normpath(HOLDING_DIR): stack.append(e.path)   # the holding bin is not part of the library
+                            continue
                         if not e.is_file(follow_symlinks=False): continue
                         if os.path.splitext(e.name)[1].lower() not in VIDEO_EXT: continue
                         st = e.stat(follow_symlinks=False)
@@ -399,6 +403,7 @@ def scan(c=None, now=None):
     SCANNING.update(on=True, started=now, phase="listing files", files=0)
     try:
         started = now; n = 0; total = 0
+        purge_holding(c, now)
         c.execute("DELETE FROM file")
         for path, st in walk(SCAN_ROOTS):
             c.execute("INSERT OR REPLACE INTO file(path,dev,ino,nlink,size,mtime,kind,seen) VALUES(?,?,?,?,?,?,?,?)",
@@ -554,6 +559,83 @@ def plan_fix(v):
 def record_action(c, mode, kind, path, detail, result, undo=None):
     c.execute("INSERT INTO action(ts,mode,kind,path,detail,result,undo) VALUES(?,?,?,?,?,?,?)", (time.time(), mode, kind, path, detail[:500], result[:500], json.dumps(undo) if undo else None)); c.commit()
 
+# ------------------------------------------------------------------------------------------------------- holding bin (P3.1)
+READ_ONLY_NOTE = "Dedupearr can only read your media folder (it is mounted read-only), so nothing was moved. To let fixes move files, mount the share read-write; dry runs work either way."
+def hold_target(path, now):
+    """Where a file waits in the holding bin: HOLDING_DIR/<day>/<its full path>, so two files with one name never collide and the way back is plain to see."""
+    return os.path.join(HOLDING_DIR, time.strftime("%Y-%m-%d", time.localtime(now)), os.path.normpath(path).lstrip(os.sep))
+def under_roots(path):
+    n = os.path.normpath(path); return any(n.startswith(os.path.normpath(r) + os.sep) for r in SCAN_ROOTS) and not n.startswith(os.path.normpath(HOLDING_DIR) + os.sep)
+def hold_file(c, path, kind, why, now=None):
+    """Move one file into the holding bin after checking it is still the file the scan judged. Returns (code, obj). Nothing is ever deleted here."""
+    now = now or time.time()
+    if not under_roots(path): return 400, {"error": "that file is outside the folders Dedupearr scans"}
+    f = c.execute("SELECT dev, ino, size FROM file WHERE path=?", (path,)).fetchone()
+    try: st = os.lstat(path)
+    except FileNotFoundError: return 409, {"error": "the file is no longer there; the next scan drops the row"}
+    if not stat_regular(st): return 400, {"error": "that is not a plain file, so it is left alone"}
+    if not f or (st.st_dev, st.st_ino, st.st_size) != (f["dev"], f["ino"], f["size"]): return 409, {"error": "the file changed since the last scan, so nothing was moved; scan again and look at the row once more"}
+    dest = hold_target(path, now)
+    if os.path.lexists(dest): return 409, {"error": "the holding bin already holds a file at that place; nothing was moved"}
+    try:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if os.stat(os.path.dirname(dest)).st_dev != st.st_dev: return 409, {"error": "the holding bin is on another disk than the file, so moving would mean copying; nothing was moved. Set HOLDING_DIR inside the same share."}
+        os.rename(path, dest)
+    except OSError as e:
+        if e.errno in (30, 13, 1): return 409, {"error": READ_ONLY_NOTE}   # EROFS, EACCES, EPERM
+        return 500, {"error": f"the move failed, nothing was changed: {e.strerror or e}"}
+    hid = c.execute("INSERT INTO held(orig,held,size,dev,ino,at,kind,why) VALUES(?,?,?,?,?,?,?,?)", (path, dest, st.st_size, st.st_dev, st.st_ino, now, kind, why[:300])).lastrowid
+    c.execute("DELETE FROM verdict WHERE path=?", (path,)); c.execute("DELETE FROM file WHERE path=?", (path,)); c.commit()
+    record_action(c, "on", kind, path, why, f"moved to the holding bin; kept {HOLD_DAYS} days, Put back undoes it", {"held_id": hid})
+    return 200, {"ok": True, "dry_run": False, "held_id": hid, "dest": dest, "frees": st.st_size, "frees_h": human(st.st_size),
+                 "note": f"Moved to the holding bin. {human(st.st_size)} comes back after {HOLD_DAYS} days; Put back (Actions tab) undoes it until then."}
+def stat_regular(st):
+    import stat as _st; return _st.S_ISREG(st.st_mode)
+def restore_held(c, hid):
+    """Put a held file back where it was. Refuses when its old place is taken or the file in the bin is not the one that went in."""
+    r = c.execute("SELECT * FROM held WHERE id=?", (hid,)).fetchone()
+    if not r: return 404, {"error": "nothing like that in the holding bin"}
+    if r["restored"]: return 409, {"error": "already put back"}
+    if r["purged"]: return 409, {"error": f"its {HOLD_DAYS} days ran out and it was deleted; it cannot come back"}
+    try: st = os.lstat(r["held"])
+    except FileNotFoundError: return 409, {"error": "the file is no longer in the holding bin (someone moved it by hand)"}
+    if (st.st_ino, st.st_size) != (r["ino"], r["size"]): return 409, {"error": "the file in the holding bin is not the one that went in, so it is left alone"}
+    if os.path.lexists(r["orig"]): return 409, {"error": "something new already sits at its old place, so nothing was moved; move that away first"}
+    try: os.makedirs(os.path.dirname(r["orig"]), exist_ok=True); os.rename(r["held"], r["orig"])
+    except OSError as e: return (409, {"error": READ_ONLY_NOTE}) if e.errno in (30, 13, 1) else (500, {"error": f"putting it back failed, nothing was changed: {e.strerror or e}"})
+    c.execute("UPDATE held SET restored=? WHERE id=?", (time.time(), hid)); c.commit(); tidy_holding(os.path.dirname(r["held"]))
+    record_action(c, "on", "undo", r["orig"], f"put back from the holding bin (held {datetime.datetime.fromtimestamp(r['at']):%Y-%m-%d %H:%M})", "back in its old place; the next scan judges it again")
+    return 200, {"ok": True, "note": "Put back in its old place. The next scan judges it again."}
+def tidy_holding(d):
+    """Remove empty folders the holding bin made, never the bin itself."""
+    top = os.path.normpath(HOLDING_DIR)
+    while d and os.path.normpath(d).startswith(top + os.sep):
+        try: os.rmdir(d)
+        except OSError: return
+        d = os.path.dirname(d)
+def purge_holding(c, now=None):
+    """Delete what has waited HOLD_DAYS in the holding bin, but only a file that is still the one that went in. Returns (files, bytes)."""
+    now = now or time.time(); n = b = 0
+    for r in c.execute("SELECT * FROM held WHERE restored IS NULL AND purged IS NULL AND at < ?", (now - HOLD_DAYS * 86400,)).fetchall():
+        try: st = os.lstat(r["held"])
+        except FileNotFoundError: c.execute("UPDATE held SET purged=?, note=? WHERE id=?", (now, "already gone from the bin", r["id"])); continue
+        if (st.st_ino, st.st_size) != (r["ino"], r["size"]): c.execute("UPDATE held SET note=? WHERE id=?", ("left alone: not the file that went in", r["id"])); continue
+        try: os.remove(r["held"])
+        except OSError as e: note_error(f"holding bin: could not delete {r['held']}: {e}"); continue
+        c.execute("UPDATE held SET purged=? WHERE id=?", (now, r["id"])); n += 1; b += r["size"]; tidy_holding(os.path.dirname(r["held"]))
+        record_action(c, "on", "purge", r["orig"], f"{HOLD_DAYS} days in the holding bin ran out", f"deleted, {human(r['size'])} back")
+    c.commit()
+    if n: log(f"holding bin: {n} file(s) past {HOLD_DAYS} days deleted, {human(b)} back")
+    return n, b
+def holding(c, now=None):
+    now = now or time.time(); out = []
+    for r in c.execute("SELECT * FROM held WHERE restored IS NULL AND purged IS NULL ORDER BY at DESC").fetchall():
+        left = max(0.0, HOLD_DAYS - (now - r["at"]) / 86400)
+        out.append({"id": r["id"], "orig": r["orig"], "title": friendly_title(r["orig"]), "size": r["size"], "size_h": human(r["size"]), "kind": r["kind"], "why": r["why"],
+                    "when": datetime.datetime.fromtimestamp(r["at"]).isoformat(timespec="minutes"), "days_left": round(left, 1), "note": r["note"] or ""})
+    return {"items": out, "bytes": sum(i["size"] for i in out), "bytes_h": human(sum(i["size"] for i in out)), "days": HOLD_DAYS, "dir": HOLDING_DIR}
+
+LIVE_KINDS = {"bin"}   # P3.1 switches on the one fix that needs nothing but the holding bin; relink (P3.2) and remove/empty (P3.3) stay dry runs until their gates pass
 def ui_fix(c, path):
     """POST /api/fix: show the plan (dry run) or carry it out (on). Phase 3 ships the 'on' branch fix by fix; until then every call is a dry run."""
     if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so a fix never races the scan"}
@@ -563,9 +645,14 @@ def ui_fix(c, path):
     kind, steps, frees = plan_fix(v)
     if not kind: return 400, {"error": steps[0]}
     if FIX_MODE == "off": return 403, {"error": "fixes are switched off (FIX_MODE=off); the plan is still shown on the row"}
-    if FIX_MODE == "dryrun" or True:   # the 'on' branch lands with P3.1; a dry run is all that can happen today
-        record_action(c, "dryrun", kind, path, " | ".join(steps), f"dry run: would free {human(frees)}")
-        return 200, {"ok": True, "dry_run": True, "kind": kind, "steps": steps, "frees": frees, "frees_h": human(frees), "note": f"Dry run: nothing was changed. This fix would free {human(frees)} in {len(steps)} steps."}
+    if FIX_MODE == "on" and kind in LIVE_KINDS:
+        code, obj = hold_file(c, path, kind, f"{v['code']}: " + " | ".join(steps))
+        if code != 200: record_action(c, "on", kind, path, " | ".join(steps), "refused: " + obj.get("error", ""))
+        return code, dict(obj, kind=kind, steps=steps)
+    later = FIX_MODE == "on" and kind not in LIVE_KINDS
+    record_action(c, "dryrun", kind, path, " | ".join(steps), f"dry run: would free {human(frees)}")
+    return 200, {"ok": True, "dry_run": True, "kind": kind, "steps": steps, "frees": frees, "frees_h": human(frees),
+                 "note": f"Dry run: nothing was changed. This fix would free {human(frees)} in {len(steps)} steps." + (" This kind of fix is not switched on yet; it arrives after its own safety checks." if later else "")}
 
 def actions(c, limit=100):
     return [dict(r) | {"when": datetime.datetime.fromtimestamp(r["ts"]).isoformat(timespec="minutes")} for r in c.execute("SELECT * FROM action ORDER BY ts DESC LIMIT ?", (limit,))]
@@ -583,6 +670,7 @@ def state(c):
         v["removable"] = bool(v.get("removable")) and v["needs_you"]
         v["category"] = v.get("category") if v.get("category") in CAT_LABEL else "other"; v["category_label"] = CAT_LABEL[v["category"]]
         v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
+        v["fix_kind"] = FIXABLE.get(v["code"]) if v["fixable"] else ""
         items.append(v)
     counts, bytes_by = {}, {}
     cats = {k: {"key": k, "label": lab, "files": 0, "needs": 0, "wasted": 0} for k, lab in CATEGORIES}
@@ -601,13 +689,13 @@ def state(c):
     lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies, leftovers, orphans and old recycle-bin files"
             + (f", and another {human(decide)} of downloads is still undecided" if decide else "") + "."
             + (f" {human(now_bytes)} of it can go right now by your seeding rule." if now_bytes and known else "")) if last else "No scan yet. Press Scan now, or wait for the night."
-    return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True, "sandbox": SANDBOX, "sandbox_note": SANDBOX_NOTE if SANDBOX else "",
+    return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": FIX_MODE != "on", "sandbox": SANDBOX, "sandbox_note": SANDBOX_NOTE if SANDBOX else "",
             "roots": SCAN_ROOTS, "disks": disks, "scanning": {k: SCANNING[k] for k in ("on", "phase", "files", "started")},
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
             "categories": [dict(cc, wasted_h=human(cc["wasted"])) for cc in cats.values() if cc["files"]],
-            "clients": client_status(), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "holding_dir": HOLDING_DIR, "nightly_bot": nightly_bot()}
+            "clients": client_status(), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "live_kinds": sorted(LIVE_KINDS), "holding_dir": HOLDING_DIR, "holding": holding(c), "nightly_bot": nightly_bot()}
 
 def nightly_bot():
     """The nightly page bot's last report (written by the server's user script into CONFIG_DIR/uibot.json): passed/total/failed, the bot's build and the page's build."""
@@ -685,6 +773,13 @@ class Handler(SimpleHTTPRequestHandler):
                 if not path: return self._json(400, {"error": "which file?"})
                 c = db()
                 try: code, obj = ui_fix(c, path)
+                finally: c.close()
+                return self._json(code, obj)
+            if p == "/api/restore":
+                try: hid = int(body.get("id"))
+                except (TypeError, ValueError): return self._json(400, {"error": "which file?"})
+                c = db()
+                try: code, obj = restore_held(c, hid)
                 finally: c.close()
                 return self._json(code, obj)
             if p in ("/api/ignore", "/api/unignore"):

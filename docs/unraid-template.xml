@@ -13,6 +13,7 @@
   <Date>2026-11-11</Date>
   <Changes>
 ### 2026-11-12
+- Holding bin and Put back (Actions tab). With FIX_MODE=on, orphans can move to the holding bin; everything else stays a dry run. Fixes need the Data path read-write.
 - First template: phase 2 (scan, verdicts with the download clients' and arrs' knowledge, dry-run fix previews). Read-only by default.
   </Changes>
   <WebUI>http://[IP]:[PORT:3092]/</WebUI>
@@ -40,7 +41,8 @@
   <Config Name="SEED_MIN_RATIO" Target="SEED_MIN_RATIO" Default="1.0" Mode="" Description="your seeding rule: ratio a torrent must reach" Type="Variable" Display="always" Required="false" Mask="false">1.0</Config>
   <Config Name="SEED_MIN_DAYS" Target="SEED_MIN_DAYS" Default="14" Mode="" Description="your seeding rule: days a torrent must seed" Type="Variable" Display="always" Required="false" Mask="false">14</Config>
   <Config Name="SEED_RULE" Target="SEED_RULE" Default="both" Mode="" Description="both = ratio and days (private trackers), either = one of them is enough" Type="Variable" Display="always" Required="false" Mask="false">both</Config>
-  <Config Name="FIX_MODE" Target="FIX_MODE" Default="dryrun" Mode="" Description="off, dryrun (show the steps, change nothing) or on" Type="Variable" Display="always" Required="false" Mask="false">dryrun</Config>
+  <Config Name="FIX_MODE" Target="FIX_MODE" Default="dryrun" Mode="" Description="off, dryrun (show the steps, change nothing) or on (needs the Data path read-write; files go to the holding bin first)" Type="Variable" Display="always" Required="false" Mask="false">dryrun</Config>
+  <Config Name="HOLD_DAYS" Target="HOLD_DAYS" Default="14" Mode="" Description="days a fixed file waits in the holding bin before it is deleted (Put back works until then)" Type="Variable" Display="advanced" Required="false" Mask="false">14</Config>
   <Config Name="HASH_BUDGET_MB" Target="HASH_BUDGET_MB" Default="20000" Mode="" Description="full checksums per scan; beyond it duplicates are called 'very likely' from samples" Type="Variable" Display="advanced" Required="false" Mask="false">20000</Config>
   <Config Name="TZ" Target="TZ" Default="America/Winnipeg" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">America/Winnipeg</Config>
 </Container>

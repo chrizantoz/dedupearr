@@ -50,6 +50,7 @@ Each row has one plain sentence that says what the file is and what would change
 
 - 💾 **Files**: the lead sentence, the five tiles (a tile is also a filter), the filter chips, the search box and the table.
 - 📊 **Space**: one bar for the whole share: library, waste you can get back, downloads still to decide, other files, free. Under it, every verdict with its count and the space it holds.
+- 🧺 **Actions**: the holding bin (every file a fix moved, why it went, the days it has left and a **Put back** button) and the actions log (every fix, dry run or done, with its result).
 - ℹ️ **About**: health lines (last scan, errors in the last 24 hours, the read-only reminder), the settings in force, every scan with its duration, recent errors and the log.
 
 ## 🔎 Filters above the list
@@ -73,13 +74,18 @@ Anything none of these explain is **Other**, for example a software download.
 - **Scan now** (header): starts a scan straight away; the header shows the phase and the file count while it runs, and the page refreshes itself.
 - **Ignore** (on a row that needs a decision): hides the row from *Needs a decision*; it stays under *Everything* with an *ignored* chip and an **Un-ignore** button.
 - **evidence** (under a sentence): shows the numbers behind the verdict.
-- **Preview fix** (on a row that can be fixed): shows the exact steps the fix would take and the space it frees. In dry run, the default, that is all it does; nothing is moved. When fixes are switched on, the same button carries them out, through the holding bin with a 14-day undo.
+- **Preview fix** (on a row that can be fixed): shows the exact steps the fix would take and the space it frees. In dry run, the default, that is all it does; nothing is moved. When fixes are switched on (`FIX_MODE=on`), the fixes that have passed their safety checks become real: today that is **Move to holding bin** on an orphan. Press it twice (the first press asks *Sure?*). The file moves into the holding bin; nothing is deleted. The other fixes (relink, remove a finished torrent, empty an old bin) keep showing their plan as a dry run until their own checks pass.
+- **Put back** (Actions tab): returns a held file to its old place. It refuses when something new already sits there, and it cannot bring back a file whose days have run out.
 
 That is all of them.
 
 ## 🌙 What runs by itself every night
 
-One scan at `SCAN_TIME` (04:30 by default), and one at start when the last scan is more than 20 hours old. A scan lists every video file, groups the names that share an inode, compares same-size library and download files by checksum, judges the recycle bins, and writes the verdicts. Checksums are remembered per file, so a file is hashed once in its life. Nothing is moved, linked or deleted.
+One scan at `SCAN_TIME` (04:30 by default), and one at start when the last scan is more than 20 hours old. A scan lists every video file, groups the names that share an inode, compares same-size library and download files by checksum, judges the recycle bins, and writes the verdicts. Checksums are remembered per file, so a file is hashed once in its life. Nothing is moved, linked or deleted, with one exception: files that have waited `HOLD_DAYS` (14 by default) in the holding bin are deleted at the start of the scan, and only if the file there is still the one that went in.
+
+## 🧺 The holding bin
+
+A fix never deletes. It moves the file to `HOLDING_DIR` (by default `.dedupearr-holding` at the top of your first scan folder), under the day it went and its full old path, so you can always see where it came from. The move is a rename inside the same share: instant, no copying, no extra space. Dedupearr refuses the move when the file changed since the scan, when the bin would be on another disk, or when the share is mounted read-only (the default template mounts it read-only; switch the **Data** path to read-write before you turn fixes on). The scan never counts the holding bin as library or downloads.
 
 ## 💬 Frequently asked
 

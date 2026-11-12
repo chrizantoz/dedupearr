@@ -14,6 +14,9 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("recycle bin mistaken for library", 'if any(p in RECYCLE_HINTS for p in parts): return "recycle"', 'if any(p in RECYCLE_HINTS for p in parts): return "library"'),
     ("vanished files kept forever", 'if r["path"] not in seen: c.execute("DELETE FROM verdict WHERE id=?"', 'if False: c.execute("DELETE FROM verdict WHERE id=?"'),
     ("library size double-counts hardlinks", "GROUP BY dev, ino", "GROUP BY path"),
+    ("holding bin moves a file that changed since the scan", 'if not f or (st.st_dev, st.st_ino, st.st_size) != (f["dev"], f["ino"], f["size"]):', 'if not f:'),
+    ("holding bin purge ignores the days", 'AND at < ?", (now - HOLD_DAYS * 86400,)', 'AND at < ?", (now + 1e12,)'),
+    ("Put back overwrites a new file", 'if os.path.lexists(r["orig"]): return 409', 'if False: return 409'),
 ]
 arg = sys.argv[1] if len(sys.argv) > 1 else str(datetime.date.today().timetuple().tm_yday % len(MUTANTS))
 todo = MUTANTS if arg == "all" else [MUTANTS[int(arg) % len(MUTANTS)]]
@@ -26,7 +29,7 @@ for name, old, new in todo:
     tmp = tempfile.mkdtemp(prefix="dedupearr-mut-")
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(tmp, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     open(os.path.join(tmp, "dedupearr.py"), "w").write(src.replace(old, new, 1))
-    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if "seeding" in name else [])
+    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if "seeding" in name else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name else [])
     caught = any(subprocess.run([sys.executable, t], capture_output=True, text=True, timeout=600).returncode != 0 for t in suites)
     p = subprocess.run([sys.executable, suites[-1]], capture_output=True, text=True, timeout=600) if not caught else subprocess.CompletedProcess([], 1, "", "")
     print(f"{'PASS' if caught else 'FAIL'} mutant '{name}': {'caught by the suite' if caught else 'SURVIVED - the suite did not notice'}  ({[l for l in p.stdout.splitlines() if l.startswith('FAIL')][:2]})")

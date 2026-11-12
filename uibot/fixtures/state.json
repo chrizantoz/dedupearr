@@ -14,23 +14,23 @@
   {
    "root": "/data",
    "total": 33539502080,
-   "used": 7689986048,
-   "free": 25849516032,
+   "used": 8151019520,
+   "free": 25388482560,
    "total_h": "33.5 GB",
-   "used_h": "7.7 GB",
-   "free_h": "25.8 GB"
+   "used_h": "8.2 GB",
+   "free_h": "25.4 GB"
   }
  ],
  "scanning": {
   "on": false,
   "phase": "",
   "files": 20,
-  "started": 1794468166.7173784
+  "started": 1794484533.4590104
  },
  "last_run": {
   "id": 1,
-  "started": 1794468166.7173784,
-  "finished": 1794468166.8562384,
+  "started": 1794484533.4590104,
+  "finished": 1794484533.5906556,
   "files": 20,
   "bytes": 60817408,
   "wasted": 26214400,
@@ -116,9 +116,9 @@
    "size": 6291456,
    "wasted": 6291456,
    "twin": "/data/media/movies/Scary Movie (2026) {tmdb-1273221}/Scary Movie (2026) {tmdb-1273221} - {edition-Theatrical Cut} [Bluray-1080p][EAC3 7.1][x264]-playHD.mkv",
-   "evidence": "inode 86836, link count 1, 6.3 MB; the library has a different release of the same title (3.1 MB, inode 86835); Deluge: seeding, ratio 1.31, 3 days, label movies",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89961, link count 1, 6.3 MB; the library has a different release of the same title (3.1 MB, inode 89960); Deluge: seeding, ratio 1.31, 3 days, label movies",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": {
     "client": "Deluge",
     "name": "Scary.Movie.2026.1080p.BluRay.x264-EniaHD",
@@ -141,7 +141,8 @@
    "twin_title": "Scary Movie (2026)",
    "client_text": "Deluge: seeding, ratio 1.31, 3 days, label movies",
    "category_label": "Movies",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/torrents/tv/Shogun.S01E05.1080p.WEB.h264-GRP.mkv",
@@ -151,9 +152,9 @@
    "size": 5242880,
    "wasted": 5242880,
    "twin": "/data/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv",
-   "evidence": "inode 86833, link count 1, no library file of 5.2 MB; Sonarr imported it on 2026-10-14 to /tmp/dedupearr-api-ws78zt72/data/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv, and that file has since been replaced; not in any download client",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89958, link count 1, no library file of 5.2 MB; Sonarr imported it on 2026-10-14 to /tmp/dedupearr-api-46vrlyi2/data/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv, and that file has since been replaced; not in any download client",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": true,
    "category": "tv",
@@ -167,7 +168,8 @@
    "twin_title": "Shogun - S01E05 - Broken to the Fist",
    "client_text": "not in any download client",
    "category_label": "TV shows",
-   "fixable": true
+   "fixable": true,
+   "fix_kind": "remove"
   },
   {
    "path": "/data/torrents/anime/Frieren.S01E01.1080p.BluRay.mkv",
@@ -177,9 +179,9 @@
    "size": 4194304,
    "wasted": 4194304,
    "twin": "/data/media/anime/Frieren/Season 01/Frieren.S01E01.1080p.BluRay.mkv",
-   "evidence": "inodes 86831 and 86829, same size 4.2 MB, middle and end identical, only the first megabyte differs (a tag or title was edited on one copy); Deluge: seeding, ratio 0.02, 2 days, label cleanuparr-unlinked",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inodes 89956 and 89954, same size 4.2 MB, middle and end identical, only the first megabyte differs (a tag or title was edited on one copy); Deluge: seeding, ratio 0.02, 2 days, label cleanuparr-unlinked",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": {
     "client": "Deluge",
     "name": "Frieren.S01E01.1080p.BluRay",
@@ -202,7 +204,8 @@
    "twin_title": "Frieren S01E01",
    "client_text": "Deluge: seeding, ratio 0.02, 2 days, label cleanuparr-unlinked",
    "category_label": "Anime",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/torrents/movies/Dune.Part.Two.2024.2160p.WEB-DL.mkv",
@@ -212,9 +215,9 @@
    "size": 4194304,
    "wasted": 4194304,
    "twin": "/data/media/movies/Dune Part Two (2024)/Dune.Part.Two.2024.2160p.WEB-DL.mkv",
-   "evidence": "inodes 86825 and 86824, link count 1 and 1, same size 4.2 MB, checksums identical; Deluge: seeding, ratio 2.50, 30 days, label movies",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inodes 89950 and 89949, link count 1 and 1, same size 4.2 MB, checksums identical; Deluge: seeding, ratio 2.50, 30 days, label movies",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": {
     "client": "Deluge",
     "name": "Dune.Part.Two.2024.2160p.WEB-DL",
@@ -237,7 +240,8 @@
    "twin_title": "Dune Part Two 2024",
    "client_text": "Deluge: seeding, ratio 2.50, 30 days, label movies",
    "category_label": "Movies",
-   "fixable": true
+   "fixable": true,
+   "fix_kind": "relink"
   },
   {
    "path": "/data/completed/tv/Show.S01E01.1080p.WEB/Show.S01E01.1080p.WEB.mkv",
@@ -247,9 +251,9 @@
    "size": 2097152,
    "wasted": 2097152,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
-   "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; Sonarr imported it on 2026-11-01 to /tmp/dedupearr-api-ws78zt72/data/media/tv/Show/Season 01/Show - S01E01.mkv, and that file has since been replaced; NZBGet: finished (tv)",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; Sonarr imported it on 2026-11-01 to /tmp/dedupearr-api-46vrlyi2/data/media/tv/Show/Season 01/Show - S01E01.mkv, and that file has since been replaced; NZBGet: finished (tv)",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": {
     "client": "NZBGet",
     "name": "Show.S01E01.1080p.WEB",
@@ -272,7 +276,8 @@
    "twin_title": "The Bear S03E01",
    "client_text": "NZBGet: finished (tv)",
    "category_label": "TV shows",
-   "fixable": true
+   "fixable": true,
+   "fix_kind": "remove"
   },
   {
    "path": "/data/media/.trash/tv/Fallout.S01E03.720p.mkv",
@@ -283,8 +288,8 @@
    "wasted": 2097152,
    "twin": null,
    "evidence": "in the bin for 61 days, rule is 30",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": true,
    "category": "tv",
@@ -298,7 +303,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "TV shows",
-   "fixable": true
+   "fixable": true,
+   "fix_kind": "empty"
   },
   {
    "path": "/data/torrents/tv/Frieren.S01E12.1080p.REPACK.mkv",
@@ -309,8 +315,8 @@
    "wasted": 2097152,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
    "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; no download client knows this file and no arr imported it; not in any download client",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": true,
    "category": "tv",
@@ -324,7 +330,8 @@
    "twin_title": "The Bear S03E01",
    "client_text": "not in any download client",
    "category_label": "TV shows",
-   "fixable": true
+   "fixable": true,
+   "fix_kind": "bin"
   },
   {
    "path": "/data/media/anime/Frieren/Season 01/Frieren.S01E01.1080p.BluRay.mkv",
@@ -334,9 +341,9 @@
    "size": 4194304,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 86829, link count 1",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89954, link count 1",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "anime",
@@ -350,7 +357,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "Anime",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/movies/Dune Part Two (2024)/Dune.Part.Two.2024.2160p.WEB-DL.mkv",
@@ -360,9 +368,9 @@
    "size": 4194304,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 86824, link count 1",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89949, link count 1",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "movies",
@@ -376,7 +384,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "Movies",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/movies/Oppenheimer (2023)/Oppenheimer.2023.2160p.BluRay.x265.mkv",
@@ -386,9 +395,9 @@
    "size": 3145728,
    "wasted": 0,
    "twin": "/data/torrents/movies/Oppenheimer.2023.2160p.BluRay.x265/Oppenheimer.2023.2160p.BluRay.x265.mkv",
-   "evidence": "inode 86819, link count 2, 2 names on this scan",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89944, link count 2, 2 names on this scan",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "movies",
@@ -402,7 +411,8 @@
    "twin_title": "Oppenheimer 2023",
    "client_text": "",
    "category_label": "Movies",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/movies/Scary Movie (2026) {tmdb-1273221}/Scary Movie (2026) {tmdb-1273221} - {edition-Theatrical Cut} [Bluray-1080p][EAC3 7.1][x264]-playHD.mkv",
@@ -412,9 +422,9 @@
    "size": 3145728,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 86835, link count 1",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89960, link count 1",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "movies",
@@ -428,7 +438,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "Movies",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/torrents/movies/Oppenheimer.2023.2160p.BluRay.x265/Oppenheimer.2023.2160p.BluRay.x265.mkv",
@@ -438,9 +449,9 @@
    "size": 3145728,
    "wasted": 0,
    "twin": "/data/media/movies/Oppenheimer (2023)/Oppenheimer.2023.2160p.BluRay.x265.mkv",
-   "evidence": "inode 86819, link count 2, 2 names on this scan; not in any download client",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89944, link count 2, 2 names on this scan; not in any download client",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "movies",
@@ -454,7 +465,8 @@
    "twin_title": "Oppenheimer 2023",
    "client_text": "not in any download client",
    "category_label": "Movies",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/completed/tv/Fresh.S01E02.1080p.WEB/Fresh.S01E02.1080p.WEB.mkv",
@@ -465,8 +477,8 @@
    "wasted": 0,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
    "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; no arr ever imported it; NZBGet: downloading (tv)",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": {
     "client": "NZBGet",
     "name": "Fresh.S01E02.1080p.WEB",
@@ -489,7 +501,8 @@
    "twin_title": "The Bear S03E01",
    "client_text": "NZBGet: downloading (tv)",
    "category_label": "TV shows",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/.trash/tv/Fallout.S01E04.720p.mkv",
@@ -500,8 +513,8 @@
    "wasted": 0,
    "twin": null,
    "evidence": "in the bin for 2 days, rule is 30",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "tv",
@@ -515,7 +528,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "TV shows",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/movies/Heat (1995)/Heat.1995.1080p.Directors.Cut.mkv",
@@ -525,9 +539,9 @@
    "size": 2097152,
    "wasted": 0,
    "twin": "/data/media/movies/Heat (1995)/Heat.1995.1080p.mkv",
-   "evidence": "inode 86846, link count 2",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89971, link count 2",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "movies",
@@ -541,7 +555,8 @@
    "twin_title": "Heat 1995",
    "client_text": "",
    "category_label": "Movies",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/movies/Heat (1995)/Heat.1995.1080p.mkv",
@@ -551,9 +566,9 @@
    "size": 2097152,
    "wasted": 0,
    "twin": "/data/media/movies/Heat (1995)/Heat.1995.1080p.Directors.Cut.mkv",
-   "evidence": "inode 86846, link count 2",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89971, link count 2",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "movies",
@@ -567,7 +582,8 @@
    "twin_title": "Heat 1995",
    "client_text": "",
    "category_label": "Movies",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/tv/Frieren/Season 01/Frieren.S01E12.1080p.mkv",
@@ -577,9 +593,9 @@
    "size": 2097152,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 86840, link count 1",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89965, link count 1",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "tv",
@@ -593,7 +609,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "TV shows",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
@@ -603,9 +620,9 @@
    "size": 2097152,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 86844, link count 1",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "evidence": "inode 89969, link count 1",
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": false,
    "category": "tv",
@@ -619,7 +636,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "TV shows",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/stuff/Home.Video.2019.mp4",
@@ -630,8 +648,8 @@
    "wasted": 0,
    "twin": null,
    "evidence": "folder name gives no hint whether this is library, downloads or a recycle bin; add it to LIBRARY_DIRS, DOWNLOAD_DIRS or RECYCLE_DIRS",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": null,
    "removable": true,
    "category": "other",
@@ -645,7 +663,8 @@
    "twin_title": null,
    "client_text": "",
    "category_label": "Other",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   },
   {
    "path": "/data/torrents/software/Some.App.2026/Some.App.2026.iso",
@@ -656,8 +675,8 @@
    "wasted": 0,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
    "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; no arr ever imported it; Deluge: seeding, ratio 0.40, 2 days",
-   "first_seen": 1794468166.7173784,
-   "last_seen": 1794468166.7173784,
+   "first_seen": 1794484533.4590104,
+   "last_seen": 1794484533.4590104,
    "client": {
     "client": "Deluge",
     "name": "Some.App.2026",
@@ -680,12 +699,13 @@
    "twin_title": "The Bear S03E01",
    "client_text": "Deluge: seeding, ratio 0.40, 2 days",
    "category_label": "Other",
-   "fixable": false
+   "fixable": false,
+   "fix_kind": ""
   }
  ],
  "log": [
-  "2026-11-12 02:22:46 Dedupearr dev listening on :44217",
-  "2026-11-12 02:22:46 scan done: 20 files, 60.8 MB, 26.2 MB that can come back"
+  "2026-11-12 06:55:33 Dedupearr dev listening on :44875",
+  "2026-11-12 06:55:33 scan done: 20 files, 60.8 MB, 26.2 MB that can come back"
  ],
  "categories": [
   {
@@ -754,6 +774,16 @@
   "rule": "both"
  },
  "fix_mode": "dryrun",
- "holding_dir": "/tmp/dedupearr-api-ws78zt72/data/.dedupearr-holding",
+ "live_kinds": [
+  "bin"
+ ],
+ "holding_dir": "/tmp/dedupearr-api-46vrlyi2/data/.dedupearr-holding",
+ "holding": {
+  "items": [],
+  "bytes": 0,
+  "bytes_h": "0 B",
+  "days": 14,
+  "dir": "/tmp/dedupearr-api-46vrlyi2/data/.dedupearr-holding"
+ },
  "nightly_bot": {}
 }

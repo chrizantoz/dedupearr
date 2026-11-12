@@ -44,10 +44,10 @@ Why this phase matters on the owner's server (2026-11-12): 357 GB of header-diff
 
 - 🟡 **P3.0** (2026-11-12: `tests/fixes.py` proves a dry run leaves disk and clients untouched, every fixable row has a plan in sentences, a fix never runs during a scan, every attempt is logged; the fake clients record remove calls; both bots press Preview fix. Still to come: the nightly bot against production with the drift guard and the staged soak.) Bot gate before the first fix: the fake clients accept and record remove calls (already in the mock), a dry run must leave disk and clients untouched, every fix has an undo test, fix-during-scan guard, nightly bot against production with the drift guard, staged soak before promotion (Auditarr's deploy script pattern).
 
-- 🟡 **P3.1** (2026-11-12: dry run on by default with the banner, `FIX_MODE`, plans per verdict, `Preview fix`, actions log. Still to come: the holding bin moves, the 14-day undo and the restore button.) Dry run on by default with a banner; every fix shows the exact steps and the space it frees before it runs.
+- 🟢 **P3.1** (2026-11-12: dry run on by default with the banner, `FIX_MODE`, plans per verdict, `Preview fix`. Holding bin: a rename into `HOLDING_DIR/<day>/<old path>` after re-checking inode and size, Put back that refuses an occupied place, purge after `HOLD_DAYS` that only deletes the file that went in, Actions tab with the bin and the log, two-press confirm. The first live fix is orphans → holding bin; every other fix stays a dry run. Gate: `tests/fixes.py` (29 checks), three holding-bin mutants, page-bot world `live`.) Dry run on by default with a banner; every fix shows the exact steps and the space it frees before it runs.
 - 🔴 **P3.2** Relink (move the copy to the holding bin, hardlink the library file at the torrent path, verify link count and seeding, roll back on failure).
 - 🔴 **P3.3** Remove old torrent + file through the client API; empty old recycle-bin files; move orphans to the holding bin.
-- 🔴 **P3.4** Holding bin with 14-day undo; actions log; "fix all with this cause".
+- 🔴 **P3.4** "Fix all with this cause" (the holding bin, the undo and the actions log shipped with P3.1).
 - 🔴 **P3.5** Per-file lock marker shared with Auditarr so the two never fix one file at once; night runs an hour apart.
 - 🔴 **P3.6** Gate to phase 4: 30 nightly runs with zero wrong fixes.
 

@@ -16,12 +16,14 @@ const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true
       posts.push({ url: u, body: opts.body || "" });
       if (u.includes("api/scan")) return body({ ok: true, note: "scan started; the page updates itself" });
       if (u.includes("api/fix")) return body({ ok: true, dry_run: true, kind: "remove", steps: ["Ask Deluge to remove the torrent without deleting its files.", "Move the file into the holding bin (nothing is deleted).", "Keep it for 14 days, then delete it, unless you press Undo."], frees: 1, frees_h: "4.2 MB", note: "Dry run: nothing was changed." });
+      if (u.includes("api/restore")) { const id = JSON.parse(opts.body).id; const h = (data.state.holding || {}).items || []; const k = h.findIndex(x => x.id === id); if (k >= 0) h.splice(k, 1); return body({ ok: true, note: "Put back in its old place. The next scan judges it again." }); }
       if (u.includes("api/unignore")) return body({ ok: true, note: "back in Needs you" });
       if (u.includes("api/ignore")) { const p = JSON.parse(opts.body).path; const it = data.state.items.find(i => i.path === p); if (it) { it.ignored = true; it.needs_you = false; } return body({ ok: true, note: "hidden from Needs you; it stays in Everything" }); }
       return body({ error: "not found" }, 404);
     }
     if (u.includes("api/state")) return body(data.state);
     if (u.includes("api/about")) return body(data.about);
+    if (u.includes("api/actions")) return body({ actions: [{ ts: 1, when: "2026-11-12T03:30", mode: "on", kind: "bin", path: "/data/torrents/tv/x.mkv", detail: "ORPHAN", result: "moved to the holding bin" }, { ts: 0, when: "2026-11-11T03:30", mode: "dryrun", kind: "remove", path: "/data/torrents/tv/y.mkv", detail: "", result: "dry run: would free 1 GB" }], fix_mode: data.state.fix_mode });
     return body({}, 404);
   };
   w.setInterval = () => 0; w.HTMLElement.prototype.scrollIntoView = function () {};
@@ -90,9 +92,29 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   const drawnFix = items.slice(0, 500).filter(i => i.fixable).length;
   check("'Preview fix' is offered exactly on the fixable rows", $$("#rows button[data-fix]").length === drawnFix, `${$$("#rows button[data-fix]").length} vs ${drawnFix}`);
   if (fixables.length) {
-    const fb = $("#rows button[data-fix]"); const fpath = fb.dataset.fix; fb.click(); await sleep(80);
-    check("Preview fix posts the path and shows the dry-run steps under the row", posts.some(p => p.url.includes("api/fix") && p.body.includes(JSON.stringify(fpath))) && $$("#rows .plan:not([hidden]) li").length > 0 && /nothing changed/i.test($("#rows .plan:not([hidden])").textContent), $("#rows .plan:not([hidden])") ? $("#rows .plan:not([hidden])").textContent.slice(0, 120) : "no plan box");
+    const fb = $("#rows button[data-fix]:not([data-live])"); const fpath = fb ? fb.dataset.fix : ""; if (fb) { fb.click(); await sleep(80); }
+    if (fb) check("Preview fix posts the path and shows the dry-run steps under the row", posts.some(p => p.url.includes("api/fix") && p.body.includes(JSON.stringify(fpath))) && $$("#rows .plan:not([hidden]) li").length > 0 && /nothing changed/i.test($("#rows .plan:not([hidden])").textContent), $("#rows .plan:not([hidden])") ? $("#rows .plan:not([hidden])").textContent.slice(0, 120) : "no plan box");
   }
+  // P3.1: the banner follows the fix mode; a live fix needs two presses; the Actions tab shows the holding bin and the log, Put back posts the id
+  const mode = data.state.fix_mode || "dryrun"; const live = new Set(data.state.live_kinds || []);
+  check("the banner says what fixes do in this mode", ({ dryrun: /Dry run is on/, off: /switched off/, on: /Fixes are on/ })[mode].test($("#banner").textContent), $("#banner").textContent);
+  const liveRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind)).length;
+  check("'Move to holding bin' appears exactly on rows whose fix is switched on", $$("#rows button[data-live='1']").length === liveRows, `${$$("#rows button[data-live='1']").length} vs ${liveRows}`);
+  if (liveRows) {
+    const lb = $("#rows button[data-live='1']"); const n0 = posts.filter(p => p.url.includes("api/fix")).length; lb.click(); await sleep(30);
+    check("the first press of a real move only asks to be sure, nothing is posted", posts.filter(p => p.url.includes("api/fix")).length === n0 && /Sure/.test(lb.textContent) && lb.dataset.armed === "1", lb.textContent);
+    lb.click(); await sleep(80); check("the second press posts the fix for that file", posts.filter(p => p.url.includes("api/fix")).length === n0 + 1 && posts[posts.length - 1].body.includes(JSON.stringify(lb.dataset.fix)));
+  }
+  $("nav button[data-tab=actions]").click(); await sleep(80);
+  const held = ((data.state.holding || {}).items || []).length;
+  check("Actions tab shows, Files hides", !$("#actions").hidden && $("#files").hidden);
+  check("the holding bin lists every held file with Put back, or says it is empty", held ? $$("#hold-rows button[data-restore]").length === held : /nothing in the holding bin/.test($("#hold-rows").textContent), $$("#hold-rows tr").length + " rows");
+  check("the actions log shows the recorded actions in plain words", $$("#act-rows tr").length === 2 && /dry run/.test($("#act-rows").textContent) && /done/.test($("#act-rows").textContent), $("#act-rows").textContent.slice(0, 120));
+  if (held) {
+    const rb = $("#hold-rows button[data-restore]"); const rid = +rb.dataset.restore; rb.click(); await sleep(120);
+    check("Put back posts the held file's id and the row leaves the bin", posts.some(p => p.url.includes("api/restore") && JSON.parse(p.body).id === rid) && $$("#hold-rows button[data-restore]").length === held - 1, $$("#hold-rows button[data-restore]").length);
+  }
+  $("nav button[data-tab=files]").click(); await sleep(20);
   // ignore -> item leaves Needs you
   $("#chips button[data-filter=needs]").click(); await sleep(10);
   if (needs) {
