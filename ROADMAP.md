@@ -4,6 +4,12 @@ Markers: 🟢 done · 🟡 in progress · 🔴 not started · 🙋 owner step. O
 
 Proposal and research: the owner's doc "Dedupearr: the truth about your storage"; screen mockups on the "Dedupearr Mockups" canvas. Auditarr's own roadmap lists this app as N1–N4.
 
+## 🗂️ How we track work (added 2026-11-12)
+
+- **This file** is the big picture: phases, what is done, what is next, in plain words.
+- **GitHub Issues** is the inbox and the day-to-day list. Anything found along the way becomes one issue with one label: `bug`, `bot` (the test bots), `feature`, `ux` (friendlier wording, navigation, flow), `design` (look and feel), `idea`, `owner-step`. Milestones match the phases here.
+- **Rule:** an idea is written down the moment it comes up, as an issue, not remembered. When an issue ships, this file gets its line and the issue closes.
+
 ## Phase 1 · Scan and tell (read-only) — 2026-11-11
 
 - 🟢 **P1.1** Disk scanner: every video file under `SCAN_ROOTS` with inode, device, link count, size, mtime; folder kind from explicit dirs or name hints.
