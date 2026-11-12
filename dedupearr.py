@@ -158,7 +158,19 @@ def gather_context():
         if not CLIENTS[name]["url"]: CLIENT_STATUS.pop(name, None); continue
         try: clients.update(fn())
         except Exception as e: CLIENT_STATUS[name] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{name}: {e}")
-    return {"clients": clients, "imports": read_arr_imports(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
+    ctx = {"clients": clients, "imports": read_arr_imports(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
+    try:   # remembered across restarts, so the page and About stay consistent until the next scan asks again
+        c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); c.close()
+    except Exception as e: log(f"could not remember the client status: {e}")
+    return ctx
+
+def client_status():
+    if CLIENT_STATUS: return CLIENT_STATUS
+    try:
+        c = db(); saved = kv_get(c, "client_status"); c.close()
+        if saved: CLIENT_STATUS.update(json.loads(saved))
+    except Exception: pass
+    return CLIENT_STATUS
 
 def client_for(path, clients):
     if path in clients: return clients[path]
@@ -502,10 +514,10 @@ def state(c):
     items = []
     ignored = {r["path"] for r in c.execute("SELECT path FROM ignored")}
     for r in c.execute("SELECT * FROM verdict ORDER BY wasted DESC, size DESC, path"):
-        v = dict(r); v["clients_known"] = bool(CLIENT_STATUS); v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])
+        v = dict(r); v["clients_known"] = bool(client_status()); v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])
         v["needs_you"] = v["code"] in NEEDS_YOU and v["path"] not in ignored; v["ignored"] = v["path"] in ignored
         v["twin_title"] = friendly_title(v["twin"]) if v["twin"] else None
-        ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and CLIENT_STATUS)) else ""
+        ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and client_status())) else ""
         v["removable"] = bool(v.get("removable")) and v["needs_you"]
         v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
         items.append(v)
@@ -523,13 +535,13 @@ def state(c):
     now_bytes = sum(v["wasted"] for v in items if v["removable"] and v["code"] != "DOWNLOAD_UNMATCHED")
     lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies, leftovers, orphans and old recycle-bin files"
             + (f", and another {human(decide)} of downloads is still undecided" if decide else "") + "."
-            + (f" {human(now_bytes)} of it can go right now by your seeding rule." if now_bytes and CLIENT_STATUS else "")) if last else "No scan yet. Press Scan now, or wait for the night."
+            + (f" {human(now_bytes)} of it can go right now by your seeding rule." if now_bytes and client_status() else "")) if last else "No scan yet. Press Scan now, or wait for the night."
     return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True, "sandbox": SANDBOX, "sandbox_note": SANDBOX_NOTE if SANDBOX else "",
             "roots": SCAN_ROOTS, "disks": disks, "scanning": {k: SCANNING[k] for k in ("on", "phase", "files", "started")},
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
-            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "holding_dir": HOLDING_DIR, "nightly_bot": nightly_bot()}
+            "clients": client_status(), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "holding_dir": HOLDING_DIR, "nightly_bot": nightly_bot()}
 
 def nightly_bot():
     """The nightly page bot's last report (written by the server's user script into CONFIG_DIR/uibot.json): passed/total/failed, the bot's build and the page's build."""
@@ -551,9 +563,9 @@ def about(c):
         if not os.path.isdir(r): health.append({"level": "warn", "text": f"Scan root {r} is not mounted or not a folder."})
     errs = errors_recent()
     health.append({"level": "warn", "text": f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours; the newest: {errs[-1]['text'][:120]}"} if errs else {"level": "ok", "text": "No errors in the last 24 hours."})
-    for name, st_ in sorted(CLIENT_STATUS.items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
+    for name, st_ in sorted(client_status().items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
     if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
-    elif not CLIENT_STATUS and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
+    elif not client_status() and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
     health.append({"level": "ok", "text": {"off": "Fixes are switched off.", "dryrun": "Fixes run as a dry run: every 'Preview fix' shows the exact steps and nothing is moved, linked or deleted.", "on": "Fixes are on: files move to the holding bin first and can be undone for %d days." % HOLD_DAYS}.get(FIX_MODE, FIX_MODE)})
     if SANDBOX: health.append({"level": "ok", "text": SANDBOX_NOTE})
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,

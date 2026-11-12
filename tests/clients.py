@@ -30,6 +30,9 @@ check("the lead says how much can go right now", "can go right now" in S["lead"]
 check("reclaim counts leftovers and orphans, undecided counts the rest", S["reclaim_bytes"] >= by[P["unmatched"]]["size"] + by[P["dup_dl"]]["size"], (S["reclaim_bytes"], S["decide_bytes"]))
 a = d.about(c)
 check("About lists every connection and never a password", any("Deluge:" in h["text"] for h in a["health"]) and "test" not in json.dumps(a["settings"]["connections"]) and "password" not in json.dumps(a["settings"]).lower(), a["settings"]["connections"])
+# a restart: the in-memory client status is gone, but the page must still say what the last scan learned (seen on production 2026-11-12: lead lost 'can go right now')
+d.CLIENT_STATUS.clear(); S_r = d.state(c)
+check("after a restart the lead still says how much can go right now", "can go right now" in S_r["lead"] and S_r["clients"], S_r["lead"][-120:])
 # a client that stops answering: the scan still completes and About says so
 srv.shutdown(); srv.server_close(); d.CLIENT_STATUS.clear()
 r2 = d.scan(now=now + 60); S2 = d.state(c); a2 = d.about(c)
