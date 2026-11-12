@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       - name: "code quality: compile, pyflakes, ruff"
         run: python -m py_compile dedupearr.py tests/*.py && pip install -q pyflakes ruff && python -m pyflakes dedupearr.py tests/*.py && ruff check dedupearr.py tests
