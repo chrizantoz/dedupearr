@@ -512,6 +512,8 @@ def actions(c, limit=100):
 
 def state(c):
     items = []; known = bool(client_status())   # once per page, not once per row (the perf budget caught the per-row lookup)
+    if not known:   # upgraded from a build that did not remember the status yet: the rows still carry what the clients said
+        known = c.execute("SELECT 1 FROM verdict WHERE client IS NOT NULL AND client != '' LIMIT 1").fetchone() is not None
     ignored = {r["path"] for r in c.execute("SELECT path FROM ignored")}
     for r in c.execute("SELECT * FROM verdict ORDER BY wasted DESC, size DESC, path"):
         v = dict(r); v["clients_known"] = known; v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])

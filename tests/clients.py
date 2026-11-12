@@ -33,6 +33,8 @@ check("About lists every connection and never a password", any("Deluge:" in h["t
 # a restart: the in-memory client status is gone, but the page must still say what the last scan learned (seen on production 2026-11-12: lead lost 'can go right now')
 d.CLIENT_STATUS.clear(); S_r = d.state(c)
 check("after a restart the lead still says how much can go right now", "can go right now" in S_r["lead"] and S_r["clients"], S_r["lead"][-120:])
+d.CLIENT_STATUS.clear(); d.kv_set(c, "client_status", ""); S_u = d.state(c)   # upgraded from a build that never saved the status: rows with client knowledge are enough
+check("after an upgrade without a saved status the lead still says how much can go right now", "can go right now" in S_u["lead"], S_u["lead"][-120:])
 # a client that stops answering: the scan still completes and About says so
 srv.shutdown(); srv.server_close(); d.CLIENT_STATUS.clear()
 r2 = d.scan(now=now + 60); S2 = d.state(c); a2 = d.about(c)
