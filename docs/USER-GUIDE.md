@@ -2,6 +2,14 @@
 
 A plain-language tour: what the app does, what you see on the page, and what every button does. No coding needed. If you only read one section, read **Your daily routine**.
 
+## 📖 Five words you'll see
+
+- **Library**: the folder your media server plays from (`media/movies`, `media/tv`). Sonarr and Radarr put finished files here.
+- **Download folder**: where your torrent client writes files while it downloads and seeds (`torrents`, `downloads`).
+- **Hardlink**: two names for one file on disk. When your arr imports a download as a hardlink, the library file and the seeding torrent are the *same* file, so it takes space once. This is what every arr guide tells you to set up, and it only works when both folders live on one share.
+- **Copy**: the arr could not hardlink (usually because the two folders are on different shares or different mounts), so it copied. Same movie, twice the space.
+- **Evidence**: the numbers behind a verdict. An *inode* is a file's id on disk; two names with the same inode are one file. A *checksum* is a fingerprint of the content; two files with the same checksum are identical.
+
 ## 💾 What Dedupearr does
 
 Every night it walks every video file in your library and your download folder and works out what each file *is*: the real copy, a hardlink that costs nothing, a second copy that wastes space, a download nothing in the library matches, or an old recycle-bin entry. It shows the evidence (inode, link count, size, checksum) in one sentence you can read without knowing what an inode is.
