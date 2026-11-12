@@ -6,26 +6,9 @@ TMP = tempfile.mkdtemp(prefix="dedupearr-clients-"); DATA = os.path.join(TMP, "d
 import fake_disk, mock_clients  # noqa: E402
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{port}"
 now = time.time(); P = fake_disk.build(DATA, now)
-# extra situations the clients explain
-P["soft"] = fake_disk.blob(f"{DATA}/torrents/software/Some.App.2026/Some.App.2026.iso", 2, "someapp")
-P["usenet"] = fake_disk.blob(f"{DATA}/completed/tv/Show.S01E01.1080p.WEB/Show.S01E01.1080p.WEB.mkv", 2, "usenet-show")
-P["usenet_new"] = fake_disk.blob(f"{DATA}/completed/tv/Fresh.S01E02.1080p.WEB/Fresh.S01E02.1080p.WEB.mkv", 2, "usenet-fresh")
-rel = lambda p: os.path.relpath(p, os.path.dirname(os.path.dirname(p)))   # 'folder/file.mkv' as a client lists it under its save_path
-world = {"deluge": [
-    {"id": "dup1", "name": "Dune.Part.Two.2024.2160p.WEB-DL", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["dup_dl"])], "state": "Seeding", "ratio": 2.5, "seeding_time": 30 * 86400, "label": "movies"},
-    {"id": "hdr1", "name": "Frieren.S01E01.1080p.BluRay", "save_path": f"{DATA}/torrents/anime", "files": [os.path.basename(P["hdr_dl"])], "state": "Seeding", "ratio": 0.02, "seeding_time": 2 * 86400, "label": "cleanuparr-unlinked"},
-    {"id": "scary", "name": "Scary.Movie.2026.1080p.BluRay.x264-EniaHD", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["other_dl"])], "state": "Seeding", "ratio": 1.31, "seeding_time": 3 * 86400, "label": "movies"},
-    {"id": "soft", "name": "Some.App.2026", "save_path": f"{DATA}/torrents/software", "files": [rel(P["soft"])], "state": "Seeding", "ratio": 0.4, "seeding_time": 2 * 86400, "label": ""}],
-    "nzbget": [{"id": 7, "name": "Show.S01E01.1080p.WEB", "dir": os.path.dirname(P["usenet"]), "label": "tv"}],
-    "nzbget_queue": [{"id": 8, "name": "Fresh.S01E02.1080p.WEB", "dir": os.path.dirname(P["usenet_new"]), "label": "tv"}],
-    "qbit": [],
-    "arr": {"sonarr": [{"eventType": "downloadFolderImported", "date": "2026-10-14T03:00:00Z", "sourceTitle": "Shogun.S01E05.1080p.WEB.h264-GRP", "data": {"droppedPath": P["unmatched"], "importedPath": f"{DATA}/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv"}},
-                       {"eventType": "downloadFolderImported", "date": "2026-11-01T03:00:00Z", "sourceTitle": "Show.S01E01.1080p.WEB", "data": {"droppedPath": P["usenet"], "importedPath": f"{DATA}/media/tv/Show/Season 01/Show - S01E01.mkv"}}],
-            "radarr": []}}
+P.update(mock_clients.extra_files(DATA, fake_disk.blob)); world = mock_clients.world_for(P, DATA)
 srv = mock_clients.start(world, port)
-os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100", SEED_MIN_RATIO="1.0", SEED_MIN_DAYS="7", CLIENT_TIMEOUT="5",
-                  DELUGE_URL=f"{M}/deluge", DELUGE_PASSWORD="test", NZBGET_URL=f"{M}/nzbget", NZBGET_USER="test", NZBGET_PASSWORD="test", QBIT_URL=f"{M}/qbit", QBIT_USER="test", QBIT_PASSWORD="test",
-                  SONARR_URL=f"{M}/sonarr", SONARR_APIKEY="test", RADARR_URL=f"{M}/radarr", RADARR_APIKEY="test")
+os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100", SEED_MIN_RATIO="1.0", SEED_MIN_DAYS="7", CLIENT_TIMEOUT="5", **mock_clients.env_for(M))
 import dedupearr as d  # noqa: E402
 results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:240]}]"))

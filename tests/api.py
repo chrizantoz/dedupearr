@@ -5,12 +5,15 @@ import os, sys, json, time, tempfile, socket, urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-api-"); DATA = os.path.join(TMP, "data")
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100")
-import fake_disk  # noqa: E402
+import fake_disk, mock_clients  # noqa: E402
+_s = socket.socket(); _s.bind(("127.0.0.1", 0)); _mport = _s.getsockname()[1]; _s.close(); _M = f"http://127.0.0.1:{_mport}"
+_P = fake_disk.build(DATA); _P.update(mock_clients.extra_files(DATA, fake_disk.blob)); _mock = mock_clients.start(mock_clients.world_for(_P, DATA), _mport)
+os.environ.update(CLIENT_TIMEOUT="10", **mock_clients.env_for(_M))   # the recorded fixtures carry client states, so the UI bots see 'can go now'
 import dedupearr as d  # noqa: E402
 results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:220]}]"))
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
-fake_disk.build(DATA); srv = d.serve(port, block=False); base = f"http://127.0.0.1:{port}"
+srv = d.serve(port, block=False); base = f"http://127.0.0.1:{port}"
 def get(p):
     r = urllib.request.urlopen(base + p, timeout=10); return r.status, json.loads(r.read())
 def post(p, body=None):
@@ -25,9 +28,10 @@ st, j = post("/api/scan"); check("scan starts from the page", st == 200 and j["o
 for _ in range(100):
     time.sleep(0.1); st, j = get("/api/state")
     if j["last_run"] and not j["scanning"]["on"]: break
-check("scan finished and the state carries items", j["last_run"] and j["last_run"]["files"] == 17 and len(j["items"]) == 17, (j["last_run"], len(j["items"])))
+check("scan finished and the state carries items", j["last_run"] and j["last_run"]["files"] == 20 and len(j["items"]) == 20, (j["last_run"], len(j["items"])))
+check("the fixtures carry client states and at least one 'can go now'", any(i["client_text"] for i in j["items"]) and any(i["removable"] and i["needs_you"] for i in j["items"]))
 item = next(i for i in j["items"] if i["code"] == "DUPLICATE_COPY")
-need = {"path", "code", "label", "title", "plain", "evidence", "size", "wasted", "size_h", "wasted_h", "twin", "twin_title", "needs_you", "ignored", "kind"}
+need = {"path", "code", "label", "title", "plain", "evidence", "size", "wasted", "size_h", "wasted_h", "twin", "twin_title", "needs_you", "ignored", "kind", "client_text", "removable"}
 check("every item has every field the page reads", all(need <= set(i) for i in j["items"]), need - set(item))
 check("counts, wasted_by and labels agree on codes", set(j["counts"]) <= set(j["labels"]) and set(j["wasted_by"]) == set(j["counts"]))
 st, j2 = post("/api/ignore", {"path": item["path"]}); check("ignore answers in plain words", st == 200 and "hidden" in j2["note"], j2)
@@ -50,4 +54,4 @@ state_json["roots"] = ["/data"]; [dk.__setitem__("root", "/data") for dk in stat
 json.dump(state_json, open(os.path.join(fx, "state.json"), "w"), indent=1, default=str)
 j7["settings"]["SCAN_ROOTS"] = ["/data"]; json.dump(j7, open(os.path.join(fx, "about.json"), "w"), indent=1, default=str)
 check("fixtures written for the UI bot", os.path.getsize(os.path.join(fx, "state.json")) > 2000)
-srv.shutdown(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)
+srv.shutdown(); _mock.shutdown(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)

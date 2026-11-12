@@ -54,6 +54,11 @@ const rawCode = /\b[A-Z]{3,}_[A-Z_]{3,}\b/;
         check(`${label}: persona: the evidence names inodes and the other file`, /inode/i.test(ev) && /other file/.test(ev), ev.slice(0, 120));
         check(`${label}: persona: the sentence says how much would be freed`, /\d+(\.\d+)? ?(MB|GB|TB)/.test(await first.locator("td").nth(2).textContent()));
       }
+      // persona 2b: "what can I free right now?" -> the Leftovers & orphans filter and the 'can go now' chips agree with the data
+      const stateNow = JSON.parse(await page.evaluate(async () => { const r = await fetch("api/state"); const s = await r.json(); return JSON.stringify(s.items.filter(i => i.removable && i.needs_you).length); }));
+      await page.locator("#chips button[data-filter=all]").click(); await page.waitForTimeout(150);
+      const chips = await page.locator("#rows .chip", { hasText: /^can go now$/ }).count();
+      check(`${label}: persona: 'can go now' chips match what the seeding rule frees`, chips === Math.min(stateNow, 500), `${chips} vs ${stateNow}`);
       // persona 3: "this one is fine, stop showing it" (a write; skipped on a live server unless allowed)
       await page.locator("#chips button[data-filter=needs]").click(); await page.waitForTimeout(150);
       const before = await page.locator("#rows tr[id^=r-]").count(); const ign = page.locator("#rows button[data-ign]").first();

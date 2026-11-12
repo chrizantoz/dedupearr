@@ -7,15 +7,31 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-11 21:10, 17 files in 0 s."
+   "text": "Last scan 2026-11-11 21:46, 20 files in 0 s."
   },
   {
    "level": "ok",
    "text": "No errors in the last 24 hours."
   },
   {
-   "level": "warn",
-   "text": "No download client or arr is connected, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."
+   "level": "ok",
+   "text": "Deluge: 4 torrents"
+  },
+  {
+   "level": "ok",
+   "text": "NZBGet: 1 in history, 1 downloading"
+  },
+  {
+   "level": "ok",
+   "text": "Radarr: 0 imports in its history"
+  },
+  {
+   "level": "ok",
+   "text": "Sonarr: 2 imports in its history"
+  },
+  {
+   "level": "ok",
+   "text": "qBittorrent: 0 torrents"
   },
   {
    "level": "ok",
@@ -37,30 +53,30 @@
   "SEED_MIN_DAYS": 7.0,
   "CLIENT_PATH_MAP": [],
   "connections": {
-   "sonarr": "not set",
-   "radarr": "not set",
+   "sonarr": "http://127.0.0.1:57097/sonarr",
+   "radarr": "http://127.0.0.1:57097/radarr",
    "whisparr": "not set",
    "sportarr": "not set",
    "lidarr": "not set",
-   "Deluge": "not set",
-   "NZBGet": "not set",
-   "qBittorrent": "not set"
+   "Deluge": "http://127.0.0.1:57097/deluge",
+   "NZBGet": "http://127.0.0.1:57097/nzbget",
+   "qBittorrent": "http://127.0.0.1:57097/qbit"
   }
  },
  "runs": [
   {
    "id": 1,
-   "started": 1794449429.8206947,
-   "finished": 1794449429.872216,
-   "files": 17,
-   "bytes": 54525952,
-   "wasted": 22020096,
+   "started": 1794451615.5447068,
+   "finished": 1794451615.6615427,
+   "files": 20,
+   "bytes": 60817408,
+   "wasted": 26214400,
    "note": "ok"
   }
  ],
  "log": [
-  "2026-11-11 21:10:29 Dedupearr dev listening on :33153",
-  "2026-11-11 21:10:29 scan done: 17 files, 54.5 MB, 22 MB that can come back"
+  "2026-11-11 21:46:55 Dedupearr dev listening on :50829",
+  "2026-11-11 21:46:55 scan done: 20 files, 60.8 MB, 26.2 MB that can come back"
  ],
  "errors": [],
  "links": {

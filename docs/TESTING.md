@@ -6,7 +6,8 @@ Same approach as Auditarr: bots that behave like a careful user and a careless n
 | --- | --- | --- | --- |
 | 📏 | **Code quality** | `py_compile`, `pyflakes`, `ruff` (pycodestyle, pyflakes, bugbear, simplify) | unused imports, undefined names, mutable defaults, except-pass, dead code |
 | 🧪 | **Backend tests** | `tests/verdicts.py` on the fake disk (`tests/fake_disk.py`), `tests/plain_language.py`, `tests/api.py` | a wrong verdict, a sentence with a raw code or a path in it, an endpoint that changed shape |
-| 🎲 | **Fuzzing** | `tests/fuzz_disk.py` (random folder trees; the verdict rules are checked as invariants), `uibot/fuzz_ui.js` (hundreds of mangled API answers fed to the page) | a crash on an unexpected disk layout, a page that breaks on a half answer |
+| 🧫 | **Fake client stack** | `tests/mock_clients.py`: a Deluge, NZBGet, qBittorrent, Sonarr and Radarr in one process, answering in the recorded real shapes; `tests/clients.py` proves every client-aware verdict and the seeding rule; the same stack runs inside the public demo | a reader that misreads a client, a verdict that guesses about seeding |
+| 🎲 | **Fuzzing** | `tests/fuzz_disk.py` (random folder trees; the verdict rules are checked as invariants), `tests/fuzz_clients.py` (the fake clients answer with wounded JSON; the scan must finish and the rules hold), `uibot/fuzz_ui.js` (hundreds of mangled API answers fed to the page) | a crash on an unexpected disk layout or a half client answer, a page that breaks on a half answer |
 | 🌪️ | **Chaos** | `tests/chaos.py`: unlistable folder, unreadable file during checksumming, missing scan root, broken symlink, empty root | a scan that dies on one bad folder, a guess instead of a careful verdict |
 | 🧬 | **Mutation** | `tests/mutation_check.py`: eight deliberate bugs planted one at a time (hardlinks ignored, waste not counted, bins never expire, …); the suite must fail each time | a test suite that would not notice a real regression |
 | ⏱️ | **Performance budget** | `tests/perf_budget.py`: judging 60,000 files under 8 s, the page's state under 4 s | a quadratic loop that only shows on a big library |
@@ -36,8 +37,11 @@ node browser_bot.js ../ui.html http://your-server:3092                          
 - A second scan of an unchanged disk changes nothing.
 - The scan never dies because one folder or file misbehaves; it logs the problem, judges what it can, and the About page lists the errors.
 
-## Still to come (phase 2 and later)
+## The gate before each phase
 
-- 🧫 A fake stack of download clients and arrs with recorded real API shapes, like Auditarr's `tests/mock_stack.py`.
+No phase starts until the bots cover the phase before it: the fake stack answers for every new connection, the fuzzers wound every new answer, the page bot checks every new chip and filter against the data, and the browser bot has a persona for the new question a person would ask. Phase 2's gate (clients, seeding rule, "can go now") is in place. Phase 3's gate, before the first fix: the fake clients accept and record remove calls, a dry run must leave disk and clients untouched, every fix has an undo test, a fix during a scan is guarded, the nightly bot runs against production with the drift guard, and a staged soak precedes each promotion.
+
+## Still to come (phase 3 and later)
+
 - 🌙 Nightly UI bot against the production container, with the bot built from the same commit (Auditarr's drift guard).
 - 🚦 Staged soak before promotion, and the public demo as a nightly canary.

@@ -10,8 +10,10 @@ down(){ docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 up(){
   docker network inspect "$NET" >/dev/null 2>&1 || docker network create $([ "$PUBLIC" = "1" ] && echo --internal) "$NET" >/dev/null
   docker run -d --name "$NAME" --network "$NET" $([ "$PUBLIC" = "1" ] || echo -p "$PORT:3092") --restart unless-stopped --memory=256m --pids-limit 128 \
-    --tmpfs /data --tmpfs /config -e SANDBOX=1 -e TZ="${TZ:-UTC}" -e SCAN_ROOTS=/data -e MIN_SIZE_MB=1 -e HASH_BUDGET_MB=200 -e RECYCLE_DAYS=30 -e SCAN_TIME=23:59 \
-    -l com.centurylinklabs.watchtower.enable=false "$IMG" sh -c "python3 /app/tests/fake_disk.py /data >/dev/null && exec python3 /app/dedupearr.py --daemon" >/dev/null
+    --tmpfs /data --tmpfs /config -e SANDBOX=1 -e TZ="${TZ:-UTC}" -e SCAN_ROOTS=/data -e MIN_SIZE_MB=1 -e HASH_BUDGET_MB=200 -e RECYCLE_DAYS=30 -e SCAN_TIME=23:59 -e CLIENT_TIMEOUT=10 \
+    -e DELUGE_URL=http://127.0.0.1:8765/deluge -e DELUGE_PASSWORD=test -e NZBGET_URL=http://127.0.0.1:8765/nzbget -e NZBGET_USER=test -e NZBGET_PASSWORD=test -e QBIT_URL=http://127.0.0.1:8765/qbit -e QBIT_USER=test -e QBIT_PASSWORD=test \
+    -e SONARR_URL=http://127.0.0.1:8765/sonarr -e SONARR_APIKEY=test -e RADARR_URL=http://127.0.0.1:8765/radarr -e RADARR_APIKEY=test \
+    -l com.centurylinklabs.watchtower.enable=false "$IMG" sh -c "python3 /app/tests/fake_disk.py /data >/dev/null && (python3 /app/tests/mock_clients.py 8765 /data >/dev/null 2>&1 &) && sleep 1 && exec python3 /app/dedupearr.py --daemon" >/dev/null
   echo "playground $NAME up: $([ "$PUBLIC" = "1" ] && echo "internal network $NET, no host port - attach the reverse proxy to it and point it at $NAME:3092" || echo "http://localhost:$PORT")"
 }
 case "${1:-}" in up) up ;; reset) down; up ;; down) down ;; *) echo "usage: $0 up|reset|down"; exit 2 ;; esac

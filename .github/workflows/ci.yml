@@ -14,7 +14,7 @@ jobs:
       - name: "backend: plain language, verdicts on the fake disk, API contract (records the UI fixtures)"
         run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py && python tests/sandbox_mode.py && python tests/clients.py
       - name: "robustness: random disks, chaos, performance budget, one mutant a day"
-        run: python tests/fuzz_disk.py 25 ${{ github.run_number }} && python tests/chaos.py && python tests/perf_budget.py && python tests/mutation_check.py
+        run: python tests/fuzz_disk.py 25 ${{ github.run_number }} && python tests/fuzz_clients.py 12 ${{ github.run_number }} && python tests/chaos.py && python tests/perf_budget.py && python tests/mutation_check.py
       - uses: actions/setup-node@v4
         with: { node-version: "24" }
       - name: "UI bots: every button, mangled data, edge worlds, lints"

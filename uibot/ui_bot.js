@@ -63,6 +63,12 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   const q = $("#q"); q.value = "dune"; q.dispatchEvent(new w.Event("input", { bubbles: true })); await sleep(20);
   check("search narrows to matching titles", $$("#rows tr[id^=r-]").length === Math.min(500, items.filter(i => (i.title + " " + i.path + " " + i.label).toLowerCase().includes("dune")).length), $$("#rows tr[id^=r-]").length);
   $("#q").value = ""; $("#q").dispatchEvent(new w.Event("input", { bubbles: true })); await sleep(20);
+  // phase 2: client state and the seeding rule on the page
+  $("#chips button[data-filter=all]").click(); await sleep(10);
+  const withClient = items.filter(i => i.client_text), canGo = items.filter(i => i.removable && i.needs_you);
+  if (withClient.length) check("every row with a client state shows it under the sentence", withClient.filter(i => $(`#r-${i.path.replace(/[^a-z0-9]/gi, "-")}`)).every(i => $(`#r-${i.path.replace(/[^a-z0-9]/gi, "-")}`).textContent.includes(i.client_text)), withClient.length);
+  check("'can go now' chips = rows the seeding rule frees", $$("#rows .chip").filter(c => c.textContent === "can go now").length === Math.min(500, canGo.length), `${$$("#rows .chip").filter(c => c.textContent === "can go now").length} vs ${canGo.length}`);
+  if (canGo.length) check("the lead says how much can go right now", /can go right now/.test($("#lead").textContent), $("#lead").textContent.slice(0, 160));
   // ignore -> item leaves Needs you
   $("#chips button[data-filter=needs]").click(); await sleep(10);
   if (needs) {

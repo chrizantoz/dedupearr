@@ -4,10 +4,58 @@ Each torrent: {"id", "name", "save_path", "files": [relative paths], "state", "r
 import json, threading, urllib.parse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-def start(world, port=0, host="127.0.0.1"):
+import os, random
+
+def extra_files(DATA, blob):
+    """Three situations only a client or an arr can explain, added to the fake disk: a software torrent, a finished usenet download, one still downloading."""
+    return {"soft": blob(f"{DATA}/torrents/software/Some.App.2026/Some.App.2026.iso", 2, "someapp"),
+            "usenet": blob(f"{DATA}/completed/tv/Show.S01E01.1080p.WEB/Show.S01E01.1080p.WEB.mkv", 2, "usenet-show"),
+            "usenet_new": blob(f"{DATA}/completed/tv/Fresh.S01E02.1080p.WEB/Fresh.S01E02.1080p.WEB.mkv", 2, "usenet-fresh")}
+
+def world_for(P, DATA):
+    """What the fake clients and arrs know about the fake disk (P = paths from fake_disk.build + extra_files)."""
+    rel = lambda p: os.path.relpath(p, os.path.dirname(os.path.dirname(p)))
+    return {"deluge": [
+        {"id": "dup1", "name": "Dune.Part.Two.2024.2160p.WEB-DL", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["dup_dl"])], "state": "Seeding", "ratio": 2.5, "seeding_time": 30 * 86400, "label": "movies"},
+        {"id": "hdr1", "name": "Frieren.S01E01.1080p.BluRay", "save_path": f"{DATA}/torrents/anime", "files": [os.path.basename(P["hdr_dl"])], "state": "Seeding", "ratio": 0.02, "seeding_time": 2 * 86400, "label": "cleanuparr-unlinked"},
+        {"id": "scary", "name": "Scary.Movie.2026.1080p.BluRay.x264-EniaHD", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["other_dl"])], "state": "Seeding", "ratio": 1.31, "seeding_time": 3 * 86400, "label": "movies"},
+        {"id": "soft", "name": "Some.App.2026", "save_path": f"{DATA}/torrents/software", "files": [rel(P["soft"])], "state": "Seeding", "ratio": 0.4, "seeding_time": 2 * 86400, "label": ""}],
+        "nzbget": [{"id": 7, "name": "Show.S01E01.1080p.WEB", "dir": os.path.dirname(P["usenet"]), "label": "tv"}],
+        "nzbget_queue": [{"id": 8, "name": "Fresh.S01E02.1080p.WEB", "dir": os.path.dirname(P["usenet_new"]), "label": "tv"}],
+        "qbit": [],
+        "arr": {"sonarr": [{"eventType": "downloadFolderImported", "date": "2026-10-14T03:00:00Z", "sourceTitle": "Shogun.S01E05.1080p.WEB.h264-GRP", "data": {"droppedPath": P["unmatched"], "importedPath": f"{DATA}/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv"}},
+                           {"eventType": "downloadFolderImported", "date": "2026-11-01T03:00:00Z", "sourceTitle": "Show.S01E01.1080p.WEB", "data": {"droppedPath": P["usenet"], "importedPath": f"{DATA}/media/tv/Show/Season 01/Show - S01E01.mkv"}}],
+                "radarr": []}}
+
+def env_for(M):
+    """The environment that points Dedupearr at a mock listening at M."""
+    return dict(DELUGE_URL=f"{M}/deluge", DELUGE_PASSWORD="test", NZBGET_URL=f"{M}/nzbget", NZBGET_USER="test", NZBGET_PASSWORD="test", QBIT_URL=f"{M}/qbit", QBIT_USER="test", QBIT_PASSWORD="test",
+                SONARR_URL=f"{M}/sonarr", SONARR_APIKEY="test", RADARR_URL=f"{M}/radarr", RADARR_APIKEY="test")
+
+def _mangle(obj, rnd, depth=0):
+    """One random wound somewhere in a reply: a key gone, a null, a wrong type, a huge string, odd unicode."""
+    if isinstance(obj, dict) and obj:
+        k = rnd.choice(list(obj)); op = rnd.choice(["drop", "null", "str", "num", "list", "recurse", "recurse", "huge"])
+        if op == "drop": obj.pop(k)
+        elif op == "null": obj[k] = None
+        elif op == "str": obj[k] = "nope \u202e"
+        elif op == "num": obj[k] = -1
+        elif op == "list": obj[k] = []
+        elif op == "huge": obj[k] = "x" * 20000
+        elif depth < 4: _mangle(obj[k], rnd, depth + 1)
+    elif isinstance(obj, list) and obj:
+        i = rnd.randrange(len(obj)); op = rnd.choice(["recurse", "recurse", "drop", "wrong"])
+        if op == "drop": obj.pop(i)
+        elif op == "wrong": obj[i] = rnd.choice([None, 3, "x", {}])
+        elif depth < 4: _mangle(obj[i], rnd, depth + 1)
+    return obj
+
+def start(world, port=0, host="127.0.0.1", mangle_seed=None):
+    rnd = random.Random(mangle_seed) if mangle_seed is not None else None
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
         def _send(self, obj, code=200, raw=None):
+            if rnd is not None and raw is None and obj is not None and rnd.random() < 0.6: obj = _mangle(json.loads(json.dumps(obj)), rnd)
             b = raw if raw is not None else json.dumps(obj).encode(); self.send_response(code); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(b)))
             if getattr(self, "_cookie", None): self.send_header("Set-Cookie", self._cookie)
             self.end_headers(); self.wfile.write(b)
@@ -54,6 +102,13 @@ def start(world, port=0, host="127.0.0.1"):
             self._send({"error": "not found"}, 404)
     srv = ThreadingHTTPServer((host, port), H); threading.Thread(target=srv.serve_forever, daemon=True).start(); return srv
 
-if __name__ == "__main__":
+if __name__ == "__main__":   # python3 mock_clients.py <port> [fake disk root]: the demo runs this beside the app so its downloads have a client and an arr behind them
     import sys
-    s = start({}, int(sys.argv[1]) if len(sys.argv) > 1 else 8765); print("mock clients on", s.server_address); threading.Event().wait()
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import fake_disk
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765; root = sys.argv[2] if len(sys.argv) > 2 else ""
+    if root:
+        P = {k: v for k, v in fake_disk.build.__globals__.get("_last", {}).items()} if False else None
+        P = fake_disk.build(root) if not os.path.exists(os.path.join(root, "media")) else fake_disk.paths(root)
+        P.update(extra_files(root, fake_disk.blob)); w = world_for(P, root)
+    else: w = {}
+    s = start(w, port, "0.0.0.0" if root else "127.0.0.1"); print("mock clients on", s.server_address, "with" if root else "without", "a world"); threading.Event().wait()
