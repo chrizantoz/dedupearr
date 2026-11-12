@@ -25,7 +25,12 @@ def world_for(P, DATA):
         "qbit": [],
         "arr": {"sonarr": [{"eventType": "downloadFolderImported", "date": "2026-10-14T03:00:00Z", "sourceTitle": "Shogun.S01E05.1080p.WEB.h264-GRP", "data": {"droppedPath": P["unmatched"], "importedPath": f"{DATA}/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv"}},
                            {"eventType": "downloadFolderImported", "date": "2026-11-01T03:00:00Z", "sourceTitle": "Show.S01E01.1080p.WEB", "data": {"droppedPath": P["usenet"], "importedPath": f"{DATA}/media/tv/Show/Season 01/Show - S01E01.mkv"}}],
-                "radarr": []}}
+                "radarr": []},
+        # each arr's library folders, and Sonarr's anime flag per series (what a real Sonarr returns, trimmed to the fields used)
+        "roots": {"sonarr": [f"{DATA}/media/tv", f"{DATA}/media/anime"], "radarr": [f"{DATA}/media/movies"]},
+        "series": [{"id": 1, "title": "Frieren", "seriesType": "anime", "path": f"{DATA}/media/anime/Frieren"},
+                   {"id": 2, "title": "Frieren", "seriesType": "standard", "path": f"{DATA}/media/tv/Frieren"},
+                   {"id": 3, "title": "The Bear", "seriesType": "standard", "path": f"{DATA}/media/tv/The Bear"}]}
 
 def env_for(M):
     """The environment that points Dedupearr at a mock listening at M."""
@@ -67,7 +72,10 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
             if u.path.startswith("/qbit/api/v2/torrents/files"):
                 t = next((t for t in world.get("qbit", []) if t["id"] == q.get("hash", [""])[0]), None); return self._send([{"name": f, "size": 1, "progress": 1} for f in (t["files"] if t else [])])
             for app in ("sonarr", "radarr", "whisparr", "sportarr", "lidarr"):
-                if u.path == f"/{app}/api/v3/history":
+                v = "v1" if app == "lidarr" else "v3"
+                if u.path == f"/{app}/api/{v}/rootfolder": return self._send([{"id": n + 1, "path": r} for n, r in enumerate(world.get("roots", {}).get(app, []))])
+                if app == "sonarr" and u.path == "/sonarr/api/v3/series": return self._send(world.get("series", []))
+                if u.path == f"/{app}/api/{v}/history":
                     if self.headers.get("X-Api-Key") != "test": return self._send({"error": "Unauthorized"}, 401)
                     recs = world.get("arr", {}).get(app, []); page = int(q.get("page", ["1"])[0]); size = int(q.get("pageSize", ["500"])[0])
                     return self._send({"page": page, "pageSize": size, "totalRecords": len(recs), "records": recs[(page - 1) * size: page * size]})

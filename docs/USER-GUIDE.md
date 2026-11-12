@@ -56,6 +56,18 @@ Each row has one plain sentence that says what the file is and what would change
 
 **Needs a decision** (the default) · **Stored twice** · **No match** · **Old bin files** · **Unsorted** · **Everything fine** · **Everything**. The search box narrows by title, path or verdict as you type. The page shows at most 500 rows; narrow the filter or search for the rest.
 
+Under the filters is a second row, one button per **kind of media**: 📺 TV shows · 🍥 Anime · 🎬 Movies · 🔞 Adult · 🏟️ Sports · 🎵 Music · 📦 Other. Each count follows the filter above it, so "Needs a decision" plus "Anime" shows only the anime files that need you. The page remembers the kind you picked. Every row also carries a small kind tag next to its title, and the **Space** tab totals files and wasted space per kind.
+
+How Dedupearr knows the kind, strongest evidence first:
+
+1. **Your arrs' library folders.** A file inside a Sonarr root folder is a TV show, inside Radarr's is a movie, Whisparr's is adult, Sportarr's is sports, Lidarr's is music. A series Sonarr marks as anime, or a root folder named "anime", makes it Anime.
+2. **The library file it belongs to.** A download linked to, or identical to, a library file takes that file's kind.
+3. **The arr that imported it.**
+4. **The download client's label or category**, such as `tv-sonarr`, `radarr` or `anime`.
+5. **Folder names**, such as `torrents/movies`.
+
+Anything none of these explain is **Other**, for example a software download.
+
 ## 🔘 Buttons
 
 - **Scan now** (header): starts a scan straight away; the header shows the phase and the file count while it runs, and the page refreshes itself.

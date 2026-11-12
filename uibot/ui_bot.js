@@ -58,6 +58,20 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
     const want = f === "all" ? items.length : f === "needs" ? needs : f === "fine" ? items.filter(i => !i.needs_you && !i.ignored).length : f === "dups" ? items.filter(i => i.code === "DUPLICATE_COPY" || i.code === "DUPLICATE_HEADER").length : f === "nomatch" ? items.filter(i => ["DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN"].includes(i.code)).length : items.filter(i => i.code === f).length;
     check(`filter '${f}' shows ${want} rows`, shown === Math.min(want, 500), shown);
   }
+  // kinds of media (2026-11-12): one button per kind present; each shows exactly that kind; counts follow the filter
+  const cats = data.state.categories || [];
+  check("one kind button per kind present, plus All kinds (hidden when there is only one kind)", cats.length < 2 ? $("#kinds").hidden : $$("#kinds button[data-kind]").length === cats.length + 1, $$("#kinds button").length);
+  check("every row carries its kind", $$("#rows tr[id^=r-] .kind").length === $$("#rows tr[id^=r-]").length);
+  check("the kinds add up to every file", cats.reduce((n, c) => n + c.files, 0) === items.length, cats.map(c => c.key + ":" + c.files).join(" "));
+  $("#chips button[data-filter=all]").click(); await sleep(20);
+  for (const k of (cats.length < 2 ? [] : cats.map(c => c.key))) {
+    $(`#kinds button[data-kind=${k}]`).click(); await sleep(20);
+    const want = items.filter(i => i.category === k).length, shown = $$("#rows tr[id^=r-]").length, lab = cats.find(c => c.key === k).label;
+    check(`kind '${k}' shows its ${want} rows and nothing else`, shown === Math.min(want, 500) && $$("#rows tr[id^=r-] .kind").every(e => e.textContent.includes(lab)), shown);
+    check(`kind '${k}' button count matches the data`, $(`#kinds button[data-kind=${k}]`).textContent.trim().endsWith("· " + want), $(`#kinds button[data-kind=${k}]`).textContent);
+  }
+  if (cats.length >= 2) { $("#kinds button[data-kind=all]").click(); await sleep(20); check("All kinds brings every row back", $$("#rows tr[id^=r-]").length === Math.min(items.length, 500)); }
+  $("#chips button[data-filter=needs]").click(); await sleep(20);
   for (const f of $$("#tiles .tile").map(t => t.dataset.filter)) { $(`#tiles .tile[data-filter=${f}]`).click(); await sleep(10); check(`tile '${f}' selects its filter`, $("#chips button[aria-pressed=true]").dataset.filter === f, $("#chips button[aria-pressed=true]").dataset.filter); }
   $("#chips button[data-filter=all]").click(); await sleep(10);
   // search
@@ -101,6 +115,7 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   $("nav button[data-tab=about]").click(); await sleep(60);
   check("About shows health lines and the version", $$("#health li").length === data.about.health.length && $("#version").textContent.includes(data.about.version));
   check("About settings never show a key or password", !/key|token|password|secret/i.test($("#settings").textContent));
+  check("Space lists one row per kind of media", $$("#by-kind tr").length === Math.max(1, (data.state.categories || []).length), $$("#by-kind tr").length);
   check("runs table lists the scans", $$("#runs tr").length === data.about.runs.length);
   check("About lists the recent errors, or says there are none", (data.about.errors || []).length ? $("#errors").textContent.split("\n").length === data.about.errors.length : /No errors/.test($("#errors").textContent), $("#errors").textContent.slice(0, 80));
   if (data.state.last_run && !/ok/.test(data.state.last_run.note)) check("a failed last scan shows as a warning in health", $$("#health li.warn").length > 0);

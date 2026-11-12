@@ -36,8 +36,8 @@ The left column is the internal code (handy when searching the code or the API);
 
 ## 📄 The pages
 
-- **Files**: lead sentence (library size, waste, undecided downloads), five tiles that double as filters, filter chips, search, one row per file with its chip, sentence, evidence, size, wasted space and an Ignore button.
-- **Space**: one bar for the share (library · waste · to decide · other · free) and a table of every verdict with count and space.
+- **Files**: lead sentence (library size, waste, undecided downloads), five tiles that double as filters, filter chips, a row of kind buttons (TV shows, Anime, Movies, Adult, Sports, Music, Other) whose counts follow the filter, search, one row per file with its kind tag, chip, sentence, evidence, size, wasted space and an Ignore button.
+- **Space**: one bar for the share (library · waste · to decide · other · free) a table of every verdict with count and space, and a table per kind of media (files, need a decision, wasted).
 - **About**: health (last scan, errors in the last 24 hours, read-only reminder), settings in force, scan history with durations, recent errors, log.
 
 ## 🔘 The buttons

@@ -14,23 +14,23 @@
   {
    "root": "/data",
    "total": 33539502080,
-   "used": 6798786560,
-   "free": 26740715520,
+   "used": 7500525568,
+   "free": 26038976512,
    "total_h": "33.5 GB",
-   "used_h": "6.8 GB",
-   "free_h": "26.7 GB"
+   "used_h": "7.5 GB",
+   "free_h": "26 GB"
   }
  ],
  "scanning": {
   "on": false,
   "phase": "",
   "files": 20,
-  "started": 1794460176.8222806
+  "started": 1794466732.821466
  },
  "last_run": {
   "id": 1,
-  "started": 1794460176.8222806,
-  "finished": 1794460176.9443789,
+  "started": 1794466732.821466,
+  "finished": 1794466732.9549034,
   "files": 20,
   "bytes": 60817408,
   "wasted": 26214400,
@@ -116,9 +116,9 @@
    "size": 6291456,
    "wasted": 6291456,
    "twin": "/data/media/movies/Scary Movie (2026) {tmdb-1273221}/Scary Movie (2026) {tmdb-1273221} - {edition-Theatrical Cut} [Bluray-1080p][EAC3 7.1][x264]-playHD.mkv",
-   "evidence": "inode 82682, link count 1, 6.3 MB; the library has a different release of the same title (3.1 MB, inode 82681); Deluge: seeding, ratio 1.31, 3 days, label movies",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85648, link count 1, 6.3 MB; the library has a different release of the same title (3.1 MB, inode 85647); Deluge: seeding, ratio 1.31, 3 days, label movies",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": {
     "client": "Deluge",
     "name": "Scary.Movie.2026.1080p.BluRay.x264-EniaHD",
@@ -130,6 +130,7 @@
     "id": "scary"
    },
    "removable": false,
+   "category": "movies",
    "clients_known": true,
    "label": "Different release in library",
    "plain": "Nothing identical in the library, but it holds a different release of the same title: Scary Movie (2026). If that one is the keeper, this download is a leftover from an upgrade and can go once seeding is done. 6.3 MB to get back. Deluge is still seeding it (ratio 1.31, 3 days); your rule keeps it until ratio 1 and 14 days.",
@@ -139,6 +140,7 @@
    "ignored": false,
    "twin_title": "Scary Movie (2026)",
    "client_text": "Deluge: seeding, ratio 1.31, 3 days, label movies",
+   "category_label": "Movies",
    "fixable": false
   },
   {
@@ -149,11 +151,12 @@
    "size": 5242880,
    "wasted": 5242880,
    "twin": "/data/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv",
-   "evidence": "inode 82679, link count 1, no library file of 5.2 MB; Sonarr imported it on 2026-10-14 to /tmp/dedupearr-api-kmlmke1_/data/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv, and that file has since been replaced; not in any download client",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85645, link count 1, no library file of 5.2 MB; Sonarr imported it on 2026-10-14 to /tmp/dedupearr-api-b_g2t_s6/data/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv, and that file has since been replaced; not in any download client",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": true,
+   "category": "tv",
    "clients_known": true,
    "label": "Leftover from an upgrade",
    "plain": "A leftover from an upgrade: this download was imported into the library and the library has since moved on (Shogun - S01E05 - Broken to the Fist is what it keeps now). 5.2 MB to get back. Nothing holds it, so it can go now.",
@@ -163,6 +166,7 @@
    "ignored": false,
    "twin_title": "Shogun - S01E05 - Broken to the Fist",
    "client_text": "not in any download client",
+   "category_label": "TV shows",
    "fixable": true
   },
   {
@@ -173,9 +177,9 @@
    "size": 4194304,
    "wasted": 4194304,
    "twin": "/data/media/anime/Frieren/Season 01/Frieren.S01E01.1080p.BluRay.mkv",
-   "evidence": "inodes 82677 and 82675, same size 4.2 MB, middle and end identical, only the first megabyte differs (a tag or title was edited on one copy); Deluge: seeding, ratio 0.02, 2 days, label cleanuparr-unlinked",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inodes 85643 and 85641, same size 4.2 MB, middle and end identical, only the first megabyte differs (a tag or title was edited on one copy); Deluge: seeding, ratio 0.02, 2 days, label cleanuparr-unlinked",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": {
     "client": "Deluge",
     "name": "Frieren.S01E01.1080p.BluRay",
@@ -187,6 +191,7 @@
     "id": "hdr1"
    },
    "removable": false,
+   "category": "anime",
    "clients_known": true,
    "label": "Stored twice, header differs",
    "plain": "Stored twice: the library file Frieren S01E01 and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. 4.2 MB to get back. Deluge is still seeding it (ratio 0.02, 2 days); your rule keeps it until ratio 1 and 14 days.",
@@ -196,6 +201,7 @@
    "ignored": false,
    "twin_title": "Frieren S01E01",
    "client_text": "Deluge: seeding, ratio 0.02, 2 days, label cleanuparr-unlinked",
+   "category_label": "Anime",
    "fixable": false
   },
   {
@@ -206,9 +212,9 @@
    "size": 4194304,
    "wasted": 4194304,
    "twin": "/data/media/movies/Dune Part Two (2024)/Dune.Part.Two.2024.2160p.WEB-DL.mkv",
-   "evidence": "inodes 82671 and 82670, link count 1 and 1, same size 4.2 MB, checksums identical; Deluge: seeding, ratio 2.50, 30 days, label movies",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inodes 85637 and 85636, link count 1 and 1, same size 4.2 MB, checksums identical; Deluge: seeding, ratio 2.50, 30 days, label movies",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": {
     "client": "Deluge",
     "name": "Dune.Part.Two.2024.2160p.WEB-DL",
@@ -220,6 +226,7 @@
     "id": "dup1"
    },
    "removable": true,
+   "category": "movies",
    "clients_known": true,
    "label": "Stored twice",
    "plain": "Stored twice: the library file Dune Part Two 2024 and this download are two separate files with identical content. Making them one file again would free 4.2 MB. Deluge has seeded it to ratio 2.5 over 30 days, past your rule, so it can go now.",
@@ -229,6 +236,7 @@
    "ignored": false,
    "twin_title": "Dune Part Two 2024",
    "client_text": "Deluge: seeding, ratio 2.50, 30 days, label movies",
+   "category_label": "Movies",
    "fixable": true
   },
   {
@@ -239,9 +247,9 @@
    "size": 2097152,
    "wasted": 2097152,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
-   "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; Sonarr imported it on 2026-11-01 to /tmp/dedupearr-api-kmlmke1_/data/media/tv/Show/Season 01/Show - S01E01.mkv, and that file has since been replaced; NZBGet: finished (tv)",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; Sonarr imported it on 2026-11-01 to /tmp/dedupearr-api-b_g2t_s6/data/media/tv/Show/Season 01/Show - S01E01.mkv, and that file has since been replaced; NZBGet: finished (tv)",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": {
     "client": "NZBGet",
     "name": "Show.S01E01.1080p.WEB",
@@ -253,6 +261,7 @@
     "id": 7
    },
    "removable": true,
+   "category": "tv",
    "clients_known": true,
    "label": "Leftover from an upgrade",
    "plain": "A leftover from an upgrade: this download was imported into the library and the library has since moved on (The Bear S03E01 is what it keeps now). 2.1 MB to get back. It came from usenet, so there is no seeding to wait for; it can go now.",
@@ -262,6 +271,7 @@
    "ignored": false,
    "twin_title": "The Bear S03E01",
    "client_text": "NZBGet: finished (tv)",
+   "category_label": "TV shows",
    "fixable": true
   },
   {
@@ -273,10 +283,11 @@
    "wasted": 2097152,
    "twin": null,
    "evidence": "in the bin for 61 days, rule is 30",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": true,
+   "category": "tv",
    "clients_known": true,
    "label": "Old recycle-bin file",
    "plain": "In a recycle bin longer than your 30-day rule. Emptying it would free 2.1 MB.",
@@ -286,6 +297,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "TV shows",
    "fixable": true
   },
   {
@@ -297,10 +309,11 @@
    "wasted": 2097152,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
    "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; no download client knows this file and no arr imported it; not in any download client",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": true,
+   "category": "tv",
    "clients_known": true,
    "label": "Orphan",
    "plain": "An orphan: no download client knows this file and no arr imported it. 2.1 MB to get back. Nothing holds it, so it can go now.",
@@ -310,6 +323,7 @@
    "ignored": false,
    "twin_title": "The Bear S03E01",
    "client_text": "not in any download client",
+   "category_label": "TV shows",
    "fixable": true
   },
   {
@@ -320,11 +334,12 @@
    "size": 4194304,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 82675, link count 1",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85641, link count 1",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "anime",
    "clients_known": true,
    "label": "Only copy",
    "plain": "One copy, in the library. Nothing to do.",
@@ -334,6 +349,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "Anime",
    "fixable": false
   },
   {
@@ -344,11 +360,12 @@
    "size": 4194304,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 82670, link count 1",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85636, link count 1",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "movies",
    "clients_known": true,
    "label": "Only copy",
    "plain": "One copy, in the library. Nothing to do.",
@@ -358,6 +375,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "Movies",
    "fixable": false
   },
   {
@@ -368,11 +386,12 @@
    "size": 3145728,
    "wasted": 0,
    "twin": "/data/torrents/movies/Oppenheimer.2023.2160p.BluRay.x265/Oppenheimer.2023.2160p.BluRay.x265.mkv",
-   "evidence": "inode 82665, link count 2, 2 names on this scan",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85631, link count 2, 2 names on this scan",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "movies",
    "clients_known": true,
    "label": "Real copy",
    "plain": "One file with two names: the library and the download folder share it, so seeding costs no extra space.",
@@ -382,6 +401,7 @@
    "ignored": false,
    "twin_title": "Oppenheimer 2023",
    "client_text": "",
+   "category_label": "Movies",
    "fixable": false
   },
   {
@@ -392,11 +412,12 @@
    "size": 3145728,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 82681, link count 1",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85647, link count 1",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "movies",
    "clients_known": true,
    "label": "Only copy",
    "plain": "One copy, in the library. Nothing to do.",
@@ -406,6 +427,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "Movies",
    "fixable": false
   },
   {
@@ -416,11 +438,12 @@
    "size": 3145728,
    "wasted": 0,
    "twin": "/data/media/movies/Oppenheimer (2023)/Oppenheimer.2023.2160p.BluRay.x265.mkv",
-   "evidence": "inode 82665, link count 2, 2 names on this scan; not in any download client",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85631, link count 2, 2 names on this scan; not in any download client",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "movies",
    "clients_known": true,
    "label": "Seeding name",
    "plain": "This is the download-folder name of the library file Oppenheimer 2023. Same file, no extra space.",
@@ -430,6 +453,7 @@
    "ignored": false,
    "twin_title": "Oppenheimer 2023",
    "client_text": "not in any download client",
+   "category_label": "Movies",
    "fixable": false
   },
   {
@@ -441,8 +465,8 @@
    "wasted": 0,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
    "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; no arr ever imported it; NZBGet: downloading (tv)",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": {
     "client": "NZBGet",
     "name": "Fresh.S01E02.1080p.WEB",
@@ -454,6 +478,7 @@
     "id": 8
    },
    "removable": false,
+   "category": "tv",
    "clients_known": true,
    "label": "Seeding only",
    "plain": "Kept for seeding: NZBGet is seeding it and nothing in the library came from it. Not counted as waste; it goes when you remove the torrent.",
@@ -463,6 +488,7 @@
    "ignored": false,
    "twin_title": "The Bear S03E01",
    "client_text": "NZBGet: downloading (tv)",
+   "category_label": "TV shows",
    "fixable": false
   },
   {
@@ -474,10 +500,11 @@
    "wasted": 0,
    "twin": null,
    "evidence": "in the bin for 2 days, rule is 30",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "tv",
    "clients_known": true,
    "label": "In the recycle bin",
    "plain": "In a recycle bin, within your 30-day rule. It will show up here when the rule runs out.",
@@ -487,6 +514,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "TV shows",
    "fixable": false
   },
   {
@@ -497,11 +525,12 @@
    "size": 2097152,
    "wasted": 0,
    "twin": "/data/media/movies/Heat (1995)/Heat.1995.1080p.mkv",
-   "evidence": "inode 82692, link count 2",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85658, link count 2",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "movies",
    "clients_known": true,
    "label": "Two names, one file",
    "plain": "Two names inside the library share one file (Heat 1995 is the other). No space wasted.",
@@ -511,6 +540,7 @@
    "ignored": false,
    "twin_title": "Heat 1995",
    "client_text": "",
+   "category_label": "Movies",
    "fixable": false
   },
   {
@@ -521,11 +551,12 @@
    "size": 2097152,
    "wasted": 0,
    "twin": "/data/media/movies/Heat (1995)/Heat.1995.1080p.Directors.Cut.mkv",
-   "evidence": "inode 82692, link count 2",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85658, link count 2",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "movies",
    "clients_known": true,
    "label": "Two names, one file",
    "plain": "Two names inside the library share one file (Heat 1995 is the other). No space wasted.",
@@ -535,6 +566,7 @@
    "ignored": false,
    "twin_title": "Heat 1995",
    "client_text": "",
+   "category_label": "Movies",
    "fixable": false
   },
   {
@@ -545,11 +577,12 @@
    "size": 2097152,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 82686, link count 1",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85652, link count 1",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "tv",
    "clients_known": true,
    "label": "Only copy",
    "plain": "One copy, in the library. Nothing to do.",
@@ -559,6 +592,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "TV shows",
    "fixable": false
   },
   {
@@ -569,11 +603,12 @@
    "size": 2097152,
    "wasted": 0,
    "twin": null,
-   "evidence": "inode 82690, link count 1",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "evidence": "inode 85656, link count 1",
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": false,
+   "category": "tv",
    "clients_known": true,
    "label": "Only copy",
    "plain": "One copy, in the library. Nothing to do.",
@@ -583,6 +618,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "TV shows",
    "fixable": false
   },
   {
@@ -594,10 +630,11 @@
    "wasted": 0,
    "twin": null,
    "evidence": "folder name gives no hint whether this is library, downloads or a recycle bin; add it to LIBRARY_DIRS, DOWNLOAD_DIRS or RECYCLE_DIRS",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": null,
    "removable": true,
+   "category": "other",
    "clients_known": true,
    "label": "Unsorted folder",
    "plain": "Not inside a folder I recognise as library, downloads or a recycle bin. Name the folder in the settings and it will be judged on the next scan.",
@@ -607,6 +644,7 @@
    "ignored": false,
    "twin_title": null,
    "client_text": "",
+   "category_label": "Other",
    "fixable": false
   },
   {
@@ -618,8 +656,8 @@
    "wasted": 0,
    "twin": "/data/media/tv/The Bear/Season 03/The.Bear.S03E01.2160p.mkv",
    "evidence": "same size as The Bear S03E01 (2.1 MB) but the content differs; no arr ever imported it; Deluge: seeding, ratio 0.40, 2 days",
-   "first_seen": 1794460176.8222806,
-   "last_seen": 1794460176.8222806,
+   "first_seen": 1794466732.821466,
+   "last_seen": 1794466732.821466,
    "client": {
     "client": "Deluge",
     "name": "Some.App.2026",
@@ -631,6 +669,7 @@
     "id": "soft"
    },
    "removable": false,
+   "category": "other",
    "clients_known": true,
    "label": "Seeding only",
    "plain": "Kept for seeding: Deluge is seeding it and nothing in the library came from it. Not counted as waste; it goes when you remove the torrent.",
@@ -640,12 +679,47 @@
    "ignored": false,
    "twin_title": "The Bear S03E01",
    "client_text": "Deluge: seeding, ratio 0.40, 2 days",
+   "category_label": "Other",
    "fixable": false
   }
  ],
  "log": [
-  "2026-11-12 00:09:36 Dedupearr dev listening on :57845",
-  "2026-11-12 00:09:36 scan done: 20 files, 60.8 MB, 26.2 MB that can come back"
+  "2026-11-12 01:58:52 Dedupearr dev listening on :42997",
+  "2026-11-12 01:58:52 scan done: 20 files, 60.8 MB, 26.2 MB that can come back"
+ ],
+ "categories": [
+  {
+   "key": "tv",
+   "label": "TV shows",
+   "files": 8,
+   "needs": 4,
+   "wasted": 11534336,
+   "wasted_h": "11.5 MB"
+  },
+  {
+   "key": "anime",
+   "label": "Anime",
+   "files": 2,
+   "needs": 1,
+   "wasted": 4194304,
+   "wasted_h": "4.2 MB"
+  },
+  {
+   "key": "movies",
+   "label": "Movies",
+   "files": 8,
+   "needs": 2,
+   "wasted": 10485760,
+   "wasted_h": "10.5 MB"
+  },
+  {
+   "key": "other",
+   "label": "Other",
+   "files": 2,
+   "needs": 1,
+   "wasted": 0,
+   "wasted_h": "0 B"
+  }
  ],
  "clients": {
   "Deluge": {
@@ -680,6 +754,6 @@
   "rule": "both"
  },
  "fix_mode": "dryrun",
- "holding_dir": "/tmp/dedupearr-api-kmlmke1_/data/.dedupearr-holding",
+ "holding_dir": "/tmp/dedupearr-api-b_g2t_s6/data/.dedupearr-holding",
  "nightly_bot": {}
 }

@@ -4,7 +4,15 @@ Usage: python3 uibot/edge_fixtures.py"""
 import copy, json, os, random
 HERE = os.path.dirname(os.path.abspath(__file__)); SRC = os.path.join(HERE, "fixtures"); DST = os.path.join(HERE, "fixtures-edge")
 base = {n: json.load(open(os.path.join(SRC, n + ".json"))) for n in ("state", "about")}
+def kinds(st):
+    """Per-kind totals recomputed from the items, the way the app does it, so an edge world never carries the base world's totals."""
+    out = {}
+    for i in st.get("items", []):
+        k = out.setdefault(i.get("category", "other"), {"key": i.get("category", "other"), "label": i.get("category_label", "Other"), "files": 0, "needs": 0, "wasted": 0})
+        k["files"] += 1; k["needs"] += 1 if i.get("needs_you") else 0; k["wasted"] += i.get("wasted", 0)
+    return [dict(v, wasted_h=f"{v['wasted'] / 1e9:.1f} GB") for v in out.values()]
 def write(name, d, case=None):
+    if isinstance(d.get("state"), dict) and "items" in d["state"]: d["state"]["categories"] = kinds(d["state"])
     os.makedirs(os.path.join(DST, name), exist_ok=True)
     for k, v in d.items(): json.dump(v, open(os.path.join(DST, name, k + ".json"), "w"))
     json.dump({"case": case or name}, open(os.path.join(DST, name, "edge.json"), "w"))

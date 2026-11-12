@@ -131,6 +131,63 @@ def read_qbit():
                                                                              "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("category") or "", "finished": float(t.get("progress") or 0) >= 1, "id": t["hash"]}
     CLIENT_STATUS["qBittorrent"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
 
+def api_v(app): return "v1" if app == "lidarr" else "v3"
+
+# ------------------------------------------------------------------------------------------------------------ categories
+CATEGORIES = [("tv", "TV shows"), ("anime", "Anime"), ("movies", "Movies"), ("adult", "Adult"), ("sports", "Sports"), ("music", "Music"), ("other", "Other")]
+CAT_LABEL = dict(CATEGORIES)
+APP_CATEGORY = {"sonarr": "tv", "radarr": "movies", "whisparr": "adult", "sportarr": "sports", "lidarr": "music"}
+CAT_WORDS = [("anime", {"anime"}), ("adult", {"xxx", "adult", "whisparr", "porn", "nsfw"}), ("sports", {"sport", "sports", "sportarr"}),
+             ("music", {"music", "lidarr", "audio", "flac"}), ("tv", {"tv", "series", "shows", "sonarr", "television", "episodes"}),
+             ("movies", {"movie", "movies", "film", "films", "radarr", "cinema"})]
+
+TWIN_IS_EVIDENCE = {"REAL_COPY", "LINKED_SEED", "LIBRARY_TWIN", "DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER"}   # a lookalike's twin is only a size coincidence
+
+def words_category(text):
+    """A category from words in folder names or a client label ('tv-sonarr', 'Anime', 'xxx'); None when nothing matches."""
+    toks = set(re.split(r"[^a-z0-9]+", (text or "").lower()))
+    for cat, words in CAT_WORDS:
+        if toks & words: return cat
+    return None
+
+def read_arr_roots():
+    """Each arr's library folders (its root folders) and Sonarr's anime series folders: the most reliable answer to 'what kind of file is this'."""
+    roots, anime = [], []
+    for app, cfg in ARRS.items():
+        if not cfg["url"] or not cfg["key"]: continue
+        H = {"X-Api-Key": cfg["key"]}
+        try:
+            for rf in http_json(f"{cfg['url']}/api/{api_v(app)}/rootfolder", headers=H) or []:
+                pth = map_client_path(str(rf.get("path") or "")).rstrip("/")
+                if pth: roots.append((pth, "anime" if words_category(os.path.basename(pth)) == "anime" else APP_CATEGORY[app]))
+            if app == "sonarr":
+                for se in http_json(f"{cfg['url']}/api/v3/series", headers=H) or []:
+                    if str(se.get("seriesType", "")).lower() == "anime" and se.get("path"): anime.append(map_client_path(str(se["path"])).rstrip("/"))
+        except Exception as e: note_error(f"{app} folders: {e}")
+    roots.sort(key=lambda r: -len(r[0]))
+    return {"roots": roots, "anime": anime}
+
+def category_of(path, ctx, twin=None, ci=None, ai=None):
+    """What kind of media a file is, from the strongest evidence available:
+    the arr's anime flag, the arr root folder it sits in, the library file it belongs to, the arr that imported it, the client's label, then folder names."""
+    roots, anime = (ctx or {}).get("roots", []), (ctx or {}).get("anime", [])
+    def by_arr(p):
+        if not p: return None
+        if any(p.startswith(a + "/") for a in anime): return "anime"
+        for r, cat in roots:
+            if p.startswith(r + "/"): return cat
+        return None
+    for p in (path, twin, (ai or {}).get("imported")):
+        cat = by_arr(p)
+        if cat: return cat
+    if ai and ai.get("app") in APP_CATEGORY:
+        lab = words_category((ci or {}).get("label"))
+        return "anime" if lab == "anime" else APP_CATEGORY[ai["app"]]
+    for text in ((ci or {}).get("label"), os.path.dirname(twin) if twin else None, os.path.dirname(path)):
+        cat = words_category(text)
+        if cat: return cat
+    return "other"
+
 def read_arr_imports():
     """What each arr imported from where: dropped path (the download) -> imported path (the library file), newest first."""
     out = {}
@@ -139,7 +196,7 @@ def read_arr_imports():
         H = {"X-Api-Key": cfg["key"]}; n = 0; page = 1
         try:
             while page <= 40:
-                r = http_json(f"{cfg['url']}/api/v3/history?page={page}&pageSize=500&eventType=3&sortKey=date&sortDirection=descending", headers=H)
+                r = http_json(f"{cfg['url']}/api/{api_v(app)}/history?page={page}&pageSize=500&eventType=3&sortKey=date&sortDirection=descending", headers=H)
                 recs = r.get("records") or []
                 for rec in recs:
                     d = rec.get("data") or {}; dropped = map_client_path(d.get("droppedPath") or "")
@@ -158,7 +215,7 @@ def gather_context():
         if not CLIENTS[name]["url"]: CLIENT_STATUS.pop(name, None); continue
         try: clients.update(fn())
         except Exception as e: CLIENT_STATUS[name] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{name}: {e}")
-    ctx = {"clients": clients, "imports": read_arr_imports(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
+    ctx = {"clients": clients, "imports": read_arr_imports(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
     try:   # remembered across restarts, so the page and About stay consistent until the next scan asks again
         c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); c.close()
     except Exception as e: log(f"could not remember the client status: {e}")
@@ -219,7 +276,7 @@ def db():
     CREATE TABLE IF NOT EXISTS action(ts REAL, mode TEXT, kind TEXT, path TEXT, detail TEXT, result TEXT, undo TEXT);
     """)
     cols = {r[1] for r in c.execute("PRAGMA table_info(verdict)")}
-    for col, typ in (("client", "TEXT"), ("removable", "INTEGER")):
+    for col, typ in (("client", "TEXT"), ("removable", "INTEGER"), ("category", "TEXT")):
         if col not in cols: c.execute(f"ALTER TABLE verdict ADD COLUMN {col} {typ}")
     return c
 
@@ -432,11 +489,11 @@ def judge(c, now, ctx=None):
     # write back, keeping first_seen
     seen = set(verdicts)
     for path, (code, kind, size, wasted, twin, ev) in verdicts.items():
-        ci, rem = extra.get(path, (None, True))
-        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen,client,removable) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        ci, rem = extra.get(path, (None, True)); cat = category_of(path, ctx, twin if code in TWIN_IS_EVIDENCE else None, ci, imports.get(path))
+        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen,client,removable,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                      ON CONFLICT(path) DO UPDATE SET code=excluded.code,title=excluded.title,kind=excluded.kind,size=excluded.size,wasted=excluded.wasted,
-                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen,client=excluded.client,removable=excluded.removable""",
-                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now, json.dumps(ci) if ci else None, 1 if rem else 0))
+                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen,client=excluded.client,removable=excluded.removable,category=excluded.category""",
+                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now, json.dumps(ci) if ci else None, 1 if rem else 0, cat))
     for r in c.execute("SELECT path FROM verdict").fetchall():
         if r["path"] not in seen: c.execute("DELETE FROM verdict WHERE path=?", (r["path"],))
     c.commit()
@@ -521,10 +578,13 @@ def state(c):
         v["twin_title"] = friendly_title(v["twin"]) if v["twin"] else None
         ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and known)) else ""
         v["removable"] = bool(v.get("removable")) and v["needs_you"]
+        v["category"] = v.get("category") if v.get("category") in CAT_LABEL else "other"; v["category_label"] = CAT_LABEL[v["category"]]
         v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
         items.append(v)
     counts, bytes_by = {}, {}
+    cats = {k: {"key": k, "label": lab, "files": 0, "needs": 0, "wasted": 0} for k, lab in CATEGORIES}
     for v in items:
+        cc = cats[v["category"]]; cc["files"] += 1; cc["needs"] += 1 if v["needs_you"] else 0; cc["wasted"] += v["wasted"]
         counts[v["code"]] = counts.get(v["code"], 0) + 1; bytes_by[v["code"]] = bytes_by.get(v["code"], 0) + v["wasted"]
     library_bytes = sum(r["size"] for r in c.execute("SELECT MAX(size) AS size FROM file WHERE kind='library' GROUP BY dev, ino"))
     disks = []
@@ -543,6 +603,7 @@ def state(c):
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
+            "categories": [dict(cc, wasted_h=human(cc["wasted"])) for cc in cats.values() if cc["files"]],
             "clients": client_status(), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "holding_dir": HOLDING_DIR, "nightly_bot": nightly_bot()}
 
 def nightly_bot():
