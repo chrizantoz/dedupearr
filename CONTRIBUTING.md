@@ -39,6 +39,10 @@ CI runs all of that plus the edge worlds, a real-browser pass with screenshots, 
 4. Give it a tone in the page (`TONE` map) and, if it needs a filter, a chip.
 5. Describe it in `FEATURES.md`, `docs/USER-GUIDE.md` and `CHANGELOG.md`.
 
+## 🐞 When a bug is found
+
+Every bug found in the wild produces three things in the same commit: the fix; a check in the test bots that would have caught it (a bot check, a fuzz or chaos case, a mutant, or a browser persona), so that class of bug cannot come back; and an issue on the board for any feature, wording, design or bot improvement the debugging revealed, even when it is not done now.
+
 ## 🐛 Reporting problems
 
 Use the issue templates. For anything security-related, use the private report on the Security tab instead of an issue.
