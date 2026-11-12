@@ -28,6 +28,9 @@ def build(root, now=None):
     with open(p["hdr_lib"], "r+b") as f: f.seek(100); f.write(b"jpn-tagged-by-auditarr")
     # a download nothing matches
     p["unmatched"] = blob(f"{root}/torrents/tv/Shogun.S01E05.1080p.WEB.h264-GRP.mkv", 5, "shogun-old")   # a size no library file has
+    # a different release of a movie the library already has (an upgrade left the old torrent behind)
+    p["other_lib"] = blob(f"{root}/media/movies/Scary Movie (2026) {{tmdb-1273221}}/Scary Movie (2026) {{tmdb-1273221}} - {{edition-Theatrical Cut}} [Bluray-1080p][EAC3 7.1][x264]-playHD.mkv", 3, "scary-playhd")
+    p["other_dl"] = blob(f"{root}/torrents/movies/Scary.Movie.2026.1080p.BluRay.x264-EniaHD.mkv", 6, "scary-eniahd")
     # same size as a library file, different content
     p["look_lib"] = blob(f"{root}/media/tv/Frieren/Season 01/Frieren.S01E12.1080p.mkv", 2, "frieren-good")
     p["look_dl"] = blob(f"{root}/torrents/tv/Frieren.S01E12.1080p.REPACK.mkv", 2, "frieren-other")

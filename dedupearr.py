@@ -18,6 +18,7 @@ Verdict codes (never shown raw; see LABEL and sentence()):
   DUPLICATE_HEADER   same, except the first megabyte: a header edited in place on one copy (tag)   wasted size
   LOOKALIKE          same size as a library file, different content                               wasted 0
   DOWNLOAD_UNMATCHED no library file matches this download (phase 2 decides what it is)           wasted size, "to decide"
+  DOWNLOAD_OTHER_RELEASE  same, but the library holds a different release of the same title (a leftover from an upgrade, most likely)
   BIN_OLD            in a recycle bin longer than RECYCLE_DAYS                                     wasted size
   BIN_RECENT         in a recycle bin, within the rule                                            wasted 0
   OTHER              in a folder that is neither library, downloads nor recycle bin               wasted 0
@@ -92,10 +93,31 @@ _QUALITY = re.compile(r"\b(480p|576p|720p|1080p|2160p|4k|uhd|web[- ]?dl|webrip|b
 def friendly_title(path):
     """'Dune.Part.Two.2024.2160p.UHD.BluRay.x265-GRP.mkv' -> 'Dune Part Two 2024'; keeps SxxEyy."""
     name = os.path.splitext(os.path.basename(path))[0]
+    name = re.sub(r"\{[^}]*\}|\[[^\]]*\]", " ", name)   # arr-style tags: {tmdb-123}, {edition-…}, [Bluray-1080p][x264]
     name = re.sub(r"[._]+", " ", name).strip()
     name = _QUALITY.sub("", name).strip(" -")
     name = re.sub(r"\s*-\s*$", "", name)
     return re.sub(r"\s{2,}", " ", name) or os.path.basename(path)
+
+def title_key(path):
+    """A loose identity for 'same title': normalised words before the year (movies) or before SxxEyy (episodes), plus that year or episode.
+    'Scary.Movie.2026.1080p.BluRay.x264-EniaHD.mkv' and 'Scary Movie (2026) {tmdb-1273221} - {edition-Theatrical Cut} [Bluray-1080p]-playHD.mkv' -> 'scary movie 2026'."""
+    name = os.path.splitext(os.path.basename(path))[0]
+    norm = lambda t: " ".join(re.sub(r"[^a-z0-9]+", " ", t.lower()).split())
+    m = re.search(r"\b(s\d{1,2})[ ._-]?(e\d{1,3})\b", name, re.I)
+    if m: return norm(name[:m.start()]) + " " + m.group(1).lower() + m.group(2).lower()
+    m = re.search(r"(?<![a-z])(e\d{2,3})\b", name, re.I)   # anime style '- E04'
+    if m: return norm(name[:m.start()]) + " e?" + m.group(1).lower()[1:]
+    m = re.search(r"\b(19\d\d|20\d\d)\b", name)
+    if m and m.start() > 0: return norm(name[:m.start()]) + " " + m.group(1)
+    return None
+
+def same_title(a, b):
+    if not a or not b: return False
+    if a == b: return True
+    ta, ea = a.rsplit(" ", 1); tb, eb = b.rsplit(" ", 1)
+    if ta != tb: return False
+    return ea.startswith("e?") and eb.endswith(ea[2:]) or eb.startswith("e?") and ea.endswith(eb[2:])   # 'E04' without a season matches S01E04
 
 def human(n):
     n = float(n or 0)
@@ -188,9 +210,12 @@ def judge(c, now):
     groups = {}
     for r in rows: groups.setdefault((r["dev"], r["ino"]), []).append(r)
     verdicts = {}   # path -> (code, kind, size, wasted, twin, evidence)
-    lib_by_size = {}
+    lib_by_size = {}; lib_by_title = {}
     for r in rows:
-        if r["kind"] == "library": lib_by_size.setdefault(r["size"], []).append(r)
+        if r["kind"] == "library":
+            lib_by_size.setdefault(r["size"], []).append(r)
+            k = title_key(r["path"])
+            if k: lib_by_title.setdefault(k.rsplit(" ", 1)[0], []).append((k, r))
     # 1. groups of names that share one inode
     for (dev, ino), members in groups.items():
         kinds = {m["kind"] for m in members}
@@ -221,7 +246,12 @@ def judge(c, now):
                     code, twin, ev = "DUPLICATE_HEADER", l["path"], f"inodes {r['ino']} and {l['ino']}, same size {human(r['size'])}, middle and end identical, only the first megabyte differs (a tag or title was edited on one copy)"
                     break
                 code, twin, ev = "LOOKALIKE", l["path"], f"same size as {friendly_title(l['path'])} ({human(r['size'])}) but the content differs"
-        verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED") else 0, twin, ev)
+        if code == "DOWNLOAD_UNMATCHED":   # nothing identical, but is there a different release of the same title?
+            k = title_key(r["path"]) or title_key(os.path.dirname(r["path"]) + ".x")
+            for k2, l in lib_by_title.get((k or " ").rsplit(" ", 1)[0], []):
+                if same_title(k, k2):
+                    code, twin, ev = "DOWNLOAD_OTHER_RELEASE", l["path"], f"inode {r['ino']}, link count {r['nlink']}, {human(r['size'])}; the library has a different release of the same title ({human(l['size'])}, inode {l['ino']})"; break
+        verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE") else 0, twin, ev)
     # 3. everything else
     for r in rows:
         if r["path"] in verdicts: continue
@@ -245,9 +275,9 @@ def judge(c, now):
 
 # ---------------------------------------------------------------------------------------------------------- plain words
 LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": "Two names, one file", "LINKED_SEED": "Seeding name",
-         "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match",
+         "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match", "DOWNLOAD_OTHER_RELEASE": "Different release in library",
          "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "OTHER": "Unsorted folder"}
-NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "BIN_OLD", "OTHER"}
+NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "BIN_OLD", "OTHER"}
 def sentence(v):
     code, size, twin = v["code"], human(v["size"]), v.get("twin")
     t = friendly_title(twin) if twin else ""
@@ -259,6 +289,7 @@ def sentence(v):
     if code == "DUPLICATE_HEADER": return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. {size} to get back."
     if code == "LOOKALIKE": return f"Same size as {t} but different content, so not a duplicate. Worth a look if you expected one copy."
     if code == "DOWNLOAD_UNMATCHED": return f"Nothing in the library matches this download. It may be a leftover from an upgrade, an orphan, or something still seeding; the download-client check (phase 2) will tell. {size} to decide on."
+    if code == "DOWNLOAD_OTHER_RELEASE": return f"Nothing identical in the library, but it holds a different release of the same title: {t}. If that one is the keeper, this download is a leftover from an upgrade and can go once seeding is done. {size} to get back; phase 2 confirms it with the torrent client."
     if code == "BIN_OLD": return f"In a recycle bin longer than your {RECYCLE_DAYS}-day rule. Emptying it would free {size}."
     if code == "BIN_RECENT": return f"In a recycle bin, within your {RECYCLE_DAYS}-day rule. It will show up here when the rule runs out."
     return "Not inside a folder I recognise as library, downloads or a recycle bin. Name the folder in the settings and it will be judged on the next scan."
@@ -281,7 +312,7 @@ def state(c):
             u = shutil.disk_usage(root); disks.append({"root": root, "total": u.total, "used": u.used, "free": u.free, "total_h": human(u.total), "used_h": human(u.used), "free_h": human(u.free)})
         except OSError: disks.append({"root": root, "missing": True})
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone()
-    reclaim = bytes_by.get("DUPLICATE_COPY", 0) + bytes_by.get("DUPLICATE_HEADER", 0) + bytes_by.get("BIN_OLD", 0); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0)
+    reclaim = bytes_by.get("DUPLICATE_COPY", 0) + bytes_by.get("DUPLICATE_HEADER", 0) + bytes_by.get("BIN_OLD", 0); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0) + bytes_by.get("DOWNLOAD_OTHER_RELEASE", 0)
     lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies and old recycle-bin files"
             + (f", and another {human(decide)} of downloads has no match yet" if decide else "") + ".") if last else "No scan yet. Press Scan now, or wait for the night."
     return {"app": APP, "tagline": TAGLINE, "phase": PHASE, "version": VERSION, "revision": REVISION, "read_only": True, "sandbox": SANDBOX, "sandbox_note": SANDBOX_NOTE if SANDBOX else "",

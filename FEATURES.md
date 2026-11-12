@@ -24,6 +24,7 @@ The left column is the internal code (handy when searching the code or the API);
 | DUPLICATE_HEADER | same, except the first megabyte: a tag or title was edited in place on one copy; never to be relinked | the file's size |
 | LOOKALIKE | same size as a library file, different content | 0 |
 | DOWNLOAD_UNMATCHED | no library file has the same content; phase 2 asks the client whether it is a leftover, an orphan or still seeding | the file's size, counted as "to decide" |
+| DOWNLOAD_OTHER_RELEASE | no identical file, but the library holds a different release of the same title (matched on title and year, or title and episode): most likely a leftover from an upgrade | the file's size, counted as "to decide" |
 | BIN_OLD | in a recycle bin longer than `RECYCLE_DAYS` | the file's size |
 | BIN_RECENT | in a recycle bin, within the rule | 0 |
 | OTHER | the folder name gives no hint (not library, downloads or recycle bin); set `LIBRARY_DIRS` / `DOWNLOAD_DIRS` / `RECYCLE_DIRS` | 0 |

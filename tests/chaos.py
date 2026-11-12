@@ -23,7 +23,7 @@ try:
     check("files that could be judged were judged", by[P["real_lib"]]["code"] == "REAL_COPY" and by[P["unmatched"]]["code"] == "DOWNLOAD_UNMATCHED")
     if not root_user:
         check("the unlistable folder is logged and the rest of the scan goes on", any("cannot list" in l for l in d.LOG) and not any("Secret" in p for p in by), d.LOG[-5:])
-        check("the unreadable duplicate is logged and gets a careful verdict instead of a guess", any("could not read" in l for l in d.LOG) and by[P["dup_dl"]]["code"] in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"), (by[P["dup_dl"]]["code"], d.LOG[-5:]))
+        check("the unreadable duplicate is logged and gets a careful verdict instead of a guess", any("could not read" in l for l in d.LOG) and by[P["dup_dl"]]["code"] in ("DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LOOKALIKE"), (by[P["dup_dl"]]["code"], d.LOG[-5:]))
         os.chmod(locked_dir, 0o755); os.chmod(P["dup_dl"], 0o644)
     a = d.about(c)
     check("About warns about the missing root in plain words", any("not mounted" in h["text"] for h in a["health"]), a["health"])

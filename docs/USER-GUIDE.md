@@ -35,6 +35,7 @@ Each row is one file with a coloured chip:
 | 🟡 **Stored twice** | the library file and the download are two separate files with identical content | the download can go once seeding is done; relinking (phase 3) gives the space back and keeps seeding |
 | 🟡 **Stored twice, header differs** | same, except the first megabyte: a language tag or title was edited on one copy (Auditarr does this) | the download can go once seeding is done; never relink these (the torrent would put the old header back) |
 | 🟡 **Download without a match** | nothing in the library matches this download | a leftover from an upgrade, an orphan or still seeding; phase 2 asks the client and tells you which |
+| 🟡 **Different release in library** | nothing identical, but the library has another release of the same title (same name and year, or same episode) | almost always a leftover from an upgrade: the download can go once seeding is done |
 | ⚪ **Looks alike** | same size as a library file but different content | not a duplicate; worth a look if you expected one copy |
 | ⚪ **Old recycle-bin file** | in a recycle bin longer than your rule (30 days by default) | empty it |
 | 🟢 **In the recycle bin** | in a recycle bin, within the rule | nothing yet |

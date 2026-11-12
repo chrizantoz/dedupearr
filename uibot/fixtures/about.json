@@ -7,7 +7,7 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-11 19:39, 15 files in 0 s."
+   "text": "Last scan 2026-11-11 20:21, 17 files in 0 s."
   },
   {
    "level": "ok",
@@ -33,17 +33,17 @@
  "runs": [
   {
    "id": 1,
-   "started": 1794443960.5510309,
-   "finished": 1794443960.6019797,
-   "files": 15,
-   "bytes": 45088768,
-   "wasted": 15728640,
+   "started": 1794446519.2588112,
+   "finished": 1794446519.311085,
+   "files": 17,
+   "bytes": 54525952,
+   "wasted": 22020096,
    "note": "ok"
   }
  ],
  "log": [
-  "2026-11-11 19:39:20 Dedupearr dev listening on :59555",
-  "2026-11-11 19:39:20 scan done: 15 files, 45.1 MB, 15.7 MB that can come back"
+  "2026-11-11 20:21:59 Dedupearr dev listening on :39193",
+  "2026-11-11 20:21:59 scan done: 17 files, 54.5 MB, 22 MB that can come back"
  ],
  "errors": [],
  "links": {
