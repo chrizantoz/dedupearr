@@ -15,7 +15,7 @@ jobs:
         run: python tests/plain_language.py && python tests/verdicts.py && python tests/api.py && python tests/sandbox_mode.py && python tests/clients.py
       - name: "robustness: random disks, chaos, performance budget, one mutant a day"
         run: python tests/fuzz_disk.py 25 ${{ github.run_number }} && python tests/fuzz_clients.py 12 ${{ github.run_number }} && python tests/chaos.py && python tests/perf_budget.py && python tests/mutation_check.py
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: "24" }
       - name: "UI bots: every button, mangled data, edge worlds, lints"
         run: cd uibot && npm install --silent && node ui_bot.js ../ui.html fixtures && node fuzz_ui.js ../ui.html fixtures 200 ${{ github.run_number }} && python3 lint_checks.py && python3 lint_buttons.py && python3 edge_fixtures.py && for c in tidy empty huge down errors; do node ui_bot.js ../ui.html fixtures-edge/$c || exit 1; done
