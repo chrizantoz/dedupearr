@@ -44,6 +44,13 @@ st, j7 = get("/api/about"); check("about has health lines, settings without secr
 check("about carries the recent errors list and a health line about them", isinstance(j7["errors"], list) and any("errors in the last 24 hours" in h["text"] for h in j7["health"]), j7["health"])
 check("about never echoes a key or password", not any(k.lower().endswith(("key", "token", "password", "secret")) for k in j7["settings"]))
 st, j8 = get("/health"); check("health after a good scan is 200", st == 200 and j8["ok"])
+json.dump({"ts": "2026-11-12T06:20", "passed": 30, "total": 36, "failed": ["a check"], "revision": "aaaaaaa1", "page_revision": "aaaaaaa1"}, open(os.path.join(os.environ["CONFIG_DIR"], "uibot.json"), "w"))
+try: urllib.request.urlopen(base + "/health", timeout=10); check("health is 503 when the nightly page bot failed", False)
+except urllib.error.HTTPError as e: check("health is 503 when the nightly page bot failed", e.code == 503)
+st, j9 = get("/api/about"); check("About says the nightly check did not pass and names the failing check", any("did not pass" in h["text"] and "a check" in h["text"] for h in j9["health"]))
+json.dump({"ts": "2026-11-12T06:20", "passed": 36, "total": 36, "failed": [], "revision": "aaaaaaa1", "page_revision": "bbbbbbb2"}, open(os.path.join(os.environ["CONFIG_DIR"], "uibot.json"), "w"))
+st, j10 = get("/api/about"); check("a bot from another build is flagged even when it passed (drift guard)", any("pull both images" in h["text"] for h in j10["health"]))
+os.remove(os.path.join(os.environ["CONFIG_DIR"], "uibot.json"))
 try: urllib.request.urlopen(base + "/api/nothing", timeout=10); check("unknown routes answer 404", False)
 except urllib.error.HTTPError as e: check("unknown routes answer 404", e.code == 404, e.code)
 # fixtures for the UI bot

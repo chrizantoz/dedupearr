@@ -529,10 +529,20 @@ def state(c):
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
-            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "holding_dir": HOLDING_DIR}
+            "clients": CLIENT_STATUS, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "holding_dir": HOLDING_DIR, "nightly_bot": nightly_bot()}
+
+def nightly_bot():
+    """The nightly page bot's last report (written by the server's user script into CONFIG_DIR/uibot.json): passed/total/failed, the bot's build and the page's build."""
+    try: r = json.load(open(os.path.join(CONFIG_DIR, "uibot.json")))
+    except Exception: return {}
+    r["drift"] = f"bot build {str(r.get('revision', ''))[:7]} checked page build {str(r.get('page_revision', ''))[:7]}" if r.get("revision") and r.get("page_revision") and str(r["revision"])[:7] != str(r["page_revision"])[:7] else ""
+    r["ok"] = bool(r.get("total")) and not r.get("failed") and not r["drift"]; return r
 
 def about(c):
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone(); health = []
+    nb = nightly_bot()
+    if nb: health.append({"level": "ok" if nb["ok"] else "warn", "text": (f"The nightly page check passed {nb.get('passed')}/{nb.get('total')} at {str(nb.get('ts', ''))[:16].replace('T', ' ')}." if nb["ok"] else
+                           f"The nightly page check did not pass: {nb.get('passed')}/{nb.get('total')}" + (", failing: " + ", ".join(nb.get("failed") or [])[:160] if nb.get("failed") else "") + (f"; {nb['drift']} - pull both images together" if nb["drift"] else "") + ".")})
     if not last: health.append({"level": "warn", "text": "No scan has run yet."})
     elif last["note"] != "ok": health.append({"level": "warn", "text": f"The last scan failed: {last['note']}"})
     elif time.time() - last["finished"] > 2 * 86400: health.append({"level": "warn", "text": "The last scan is more than two days old."})
@@ -578,8 +588,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if p == "/api/actions": return self._json(200, {"actions": actions(c), "fix_mode": FIX_MODE})
                 if p == "/health":
                     last = c.execute("SELECT finished, note FROM run ORDER BY id DESC LIMIT 1").fetchone()
-                    ok = last and last["note"] == "ok" and time.time() - last["finished"] < 2 * 86400
-                    return self._json(200 if ok or not last else 503, {"ok": bool(ok), "version": VERSION})
+                    ok = last and last["note"] == "ok" and time.time() - last["finished"] < 2 * 86400; nb = nightly_bot()
+                    return self._json(200 if (ok or not last) and (not nb or nb["ok"]) else 503, {"ok": bool(ok) and (not nb or nb["ok"]), "version": VERSION, "revision": REVISION, "nightly_bot": {k: nb.get(k) for k in ("ts", "passed", "total", "ok")} if nb else None})
             finally: c.close()
             self._json(404, {"error": "not found"})
         except Exception as e:
