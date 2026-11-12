@@ -48,7 +48,7 @@ say "3/6 README screenshots from CI run $RUNID"
 if [ $SHOTS = 1 ]; then
   T=$(mktemp -d); mkdir -p docs/screenshots
   if gh run download "$RUNID" -n ui-screenshots -D "$T" >/dev/null 2>&1 && [ -f "$T/files-desktop-dark.png" ]; then
-    cp "$T/files-desktop-dark.png" docs/screenshots/files-dark.png; cp "$T/files-desktop.png" docs/screenshots/files-light.png
+    cp "$T/files-desktop-dark.png" docs/screenshots/files-dark.png; cp "$T/about-desktop-dark.png" docs/screenshots/about-dark.png
     cp "$T/space-desktop-dark.png" docs/screenshots/space-dark.png; cp "$T/files-phone-dark.png" docs/screenshots/phone-dark.png; echo "screenshots refreshed from CI"
   else echo "no screenshots artifact on that run - kept the current ones"; fi
 else echo "skipped (--no-screenshots)"; fi

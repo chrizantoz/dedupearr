@@ -30,13 +30,15 @@ It is deliberately small: one Python file, one HTML page, a local SQLite file fo
 
 Taken by the test bot in CI from the fake disk, so they are always current.
 
-| Files, dark | Files, light |
+| Files: one verdict per file, with the evidence | Space: where the gigabytes went |
 |---|---|
-| ![Files in dark mode](docs/screenshots/files-dark.png) | ![Files in light mode](docs/screenshots/files-light.png) |
+| ![Files tab](docs/screenshots/files-dark.png) | ![Space tab](docs/screenshots/space-dark.png) |
 
-| Space: where the gigabytes went | On a phone |
+| About: health, settings, every scan | On a phone |
 |---|---|
-| ![Space tab](docs/screenshots/space-dark.png) | ![Phone layout](docs/screenshots/phone-dark.png) |
+| ![About tab](docs/screenshots/about-dark.png) | ![Phone layout](docs/screenshots/phone-dark.png) |
+
+The page follows your system theme; a light version is one setting away.
 
 ## 🧭 How it works
 
