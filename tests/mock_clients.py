@@ -10,7 +10,9 @@ def extra_files(DATA, blob):
     """Three situations only a client or an arr can explain, added to the fake disk: a software torrent, a finished usenet download, one still downloading."""
     return {"soft": blob(f"{DATA}/torrents/software/Some.App.2026/Some.App.2026.iso", 2, "someapp"),
             "usenet": blob(f"{DATA}/completed/tv/Show.S01E01.1080p.WEB/Show.S01E01.1080p.WEB.mkv", 2, "usenet-show"),
-            "usenet_new": blob(f"{DATA}/completed/tv/Fresh.S01E02.1080p.WEB/Fresh.S01E02.1080p.WEB.mkv", 2, "usenet-fresh")}
+            "usenet_new": blob(f"{DATA}/completed/tv/Fresh.S01E02.1080p.WEB/Fresh.S01E02.1080p.WEB.mkv", 2, "usenet-fresh"),
+            "usenet_failed": blob(f"{DATA}/incomplete/Big.Pack.2160p.#54/Big.Pack.Scene.03.2160p.mp4", 2, "usenet-failed"),   # same size as library files: the lookalike path
+            "usenet_failed2": blob(f"{DATA}/incomplete/Big.Pack.2160p.#54/Big.Pack.Scene.04.2160p.mp4", 3, "usenet-failed-2")}   # a size nothing shares: the unmatched path
 
 def world_for(P, DATA):
     """What the fake clients and arrs know about the fake disk (P = paths from fake_disk.build + extra_files)."""
@@ -20,7 +22,8 @@ def world_for(P, DATA):
         {"id": "hdr1", "name": "Frieren.S01E01.1080p.BluRay", "save_path": f"{DATA}/torrents/anime", "files": [os.path.basename(P["hdr_dl"])], "state": "Seeding", "ratio": 0.02, "seeding_time": 2 * 86400, "label": "cleanuparr-unlinked"},
         {"id": "scary", "name": "Scary.Movie.2026.1080p.BluRay.x264-EniaHD", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["other_dl"])], "state": "Seeding", "ratio": 1.31, "seeding_time": 3 * 86400, "label": "movies"},
         {"id": "soft", "name": "Some.App.2026", "save_path": f"{DATA}/torrents/software", "files": [rel(P["soft"])], "state": "Seeding", "ratio": 0.4, "seeding_time": 2 * 86400, "label": ""}],
-        "nzbget": [{"id": 7, "name": "Show.S01E01.1080p.WEB", "dir": os.path.dirname(P["usenet"]), "label": "tv"}],
+        "nzbget": [{"id": 7, "name": "Show.S01E01.1080p.WEB", "dir": os.path.dirname(P["usenet"]), "label": "tv"},
+                   {"id": 54, "name": "Big.Pack.2160p", "dir": os.path.dirname(P["usenet_failed"]), "label": "", "status": "FAILURE/HEALTH"}],   # a failed job whose partial files stayed in incomplete/ (seen on a real server 2026-11-12: 243 GB)
         "nzbget_queue": [{"id": 8, "name": "Fresh.S01E02.1080p.WEB", "dir": os.path.dirname(P["usenet_new"]), "label": "tv"}],
         "qbit": [],
         "arr": {"sonarr": [{"eventType": "downloadFolderImported", "date": "2026-10-14T03:00:00Z", "sourceTitle": "Shogun.S01E05.1080p.WEB.h264-GRP", "data": {"droppedPath": P["unmatched"], "importedPath": f"{DATA}/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv"}},
