@@ -4,7 +4,7 @@ All dates 2026. Image: `ghcr.io/chrizantoz/dedupearr`.
 
 ## Unreleased — phase 2, ask the apps (2026-11-12)
 
-- Download-client and arr readers: Deluge, NZBGet and qBittorrent (seeding state, ratio, time, label, per file) and the arrs' import history (which download became which library file). A download now becomes **Leftover from an upgrade**, **Orphan** or **Seeding only**, each row shows the client's state, and a **can go now** chip appears when your seeding rule (`SEED_MIN_RATIO` or `SEED_MIN_DAYS`) is met or nothing holds the file. Still read-only; the fixes are phase 3.
+- Download-client and arr readers: Deluge, NZBGet and qBittorrent (seeding state, ratio, time, label, per file) and the arrs' import history (which download became which library file). A download now becomes **Leftover from an upgrade**, **Orphan** or **Seeding only**, each row shows the client's state, and a **can go now** chip appears when your seeding rule (`SEED_MIN_RATIO` and `SEED_MIN_DAYS`, both by default; `SEED_RULE=either` relaxes it) is met or nothing holds the file. Still read-only; the fixes are phase 3.
 - Sportarr and Lidarr are read like Sonarr and Radarr (`SPORTARR_URL` / `LIDARR_URL` and their keys).
 - A client that fails to answer is reported on About and its files fall back to the content-only verdicts; nothing is guessed.
 - Download-folder names now include `completed`, `intermediate`, `nzbget`, `sabnzbd` and friends, so usenet folders are not mistaken for the library.
