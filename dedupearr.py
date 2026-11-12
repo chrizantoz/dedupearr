@@ -730,7 +730,56 @@ def about(c):
             "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
 
+# ------------------------------------------------------------------------------------------------------------------- sign-in
+# Off until AUTH_USER and AUTH_PASSWORD are set (the page is then open, the LAN model). With them set the page asks for a sign-in,
+# except: the container itself, a proxy's Remote-User header when TRUST_PROXY_AUTH=1, and with LOCAL_NO_LOGIN=1 a browser on your
+# own network that talks to the port directly (no reverse-proxy headers), so the domain asks and the LAN address does not.
+AUTH_USER, AUTH_PASSWORD = _env("AUTH_USER"), os.environ.get("AUTH_PASSWORD", "")
+TRUST_PROXY_AUTH = _env("TRUST_PROXY_AUTH", "0") == "1"
+LOCAL_NO_LOGIN = _env("LOCAL_NO_LOGIN", "0") == "1"
+PROXY_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "Forwarded", "CF-Connecting-IP", "CF-Ray", "True-Client-IP", "Via", "Tailscale-Funnel-Request")
+def auth_on(): return bool(AUTH_USER and AUTH_PASSWORD) and not SANDBOX
+def direct_local(ip, headers):
+    """A private, loopback or tailnet address AND none of the headers a reverse proxy, tunnel or CDN adds. Through a domain one of
+    them is always there, so the domain keeps asking even though the proxy sits on a private address."""
+    import ipaddress
+    if any(headers.get(h) for h in PROXY_HEADERS): return False
+    try: a = ipaddress.ip_address((ip or "").split("%")[0])
+    except ValueError: return False
+    if getattr(a, "ipv4_mapped", None): a = a.ipv4_mapped
+    return a.is_private or a.is_loopback or (a.version == 4 and a in ipaddress.ip_network("100.64.0.0/10"))
+def session_secret():
+    c = db()
+    try:
+        v = kv_get(c, "session_secret")
+        if not v: import secrets; v = secrets.token_hex(32); kv_set(c, "session_secret", v)
+        return v
+    finally: c.close()
+def session_cookie(days=30, now=None):
+    import hmac; exp = int((now or time.time()) + days * 86400); msg = f"{AUTH_USER}|{exp}"
+    return f"{msg}|{hmac.new(session_secret().encode(), (msg + '|' + hashlib.sha256(AUTH_PASSWORD.encode()).hexdigest()).encode(), 'sha256').hexdigest()}"
+def session_user(cookie_header):
+    """The signed-in user from the cookie, or None. Changing AUTH_PASSWORD signs every browser out."""
+    import hmac
+    for part in (cookie_header or "").split(";"):
+        k, _, v = part.strip().partition("=")
+        if k != "dedupearr_s" or v.count("|") != 2: continue
+        user, exp, sig = v.split("|")
+        good = hmac.new(session_secret().encode(), f"{user}|{exp}|{hashlib.sha256(AUTH_PASSWORD.encode()).hexdigest()}".encode(), "sha256").hexdigest()
+        if hmac.compare_digest(sig, good) and user == AUTH_USER and exp.isdigit() and int(exp) > time.time(): return user
+    return None
+def check_password(user, password):
+    import hmac; return hmac.compare_digest((user or "").encode(), AUTH_USER.encode()) & hmac.compare_digest((password or "").encode(), AUTH_PASSWORD.encode())
+LOGIN_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dedupearr - sign in</title>__ICON__
+<style>:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1419;color:#e6e9ee;font:15px/1.5 system-ui,sans-serif}
+form{background:#141b22;border:1px solid #263039;border-radius:12px;padding:28px;width:min(340px,calc(100vw - 32px));box-sizing:border-box}h1{margin:0 0 16px;font-size:22px}
+label{display:block;margin:12px 0 4px;color:#b6c0cb}input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #263039;background:#0b0f14;color:#e6e9ee;font:inherit}
+button{margin-top:18px;width:100%;padding:10px;border:0;border-radius:8px;background:#38bdf8;color:#0b0f14;font:600 15px system-ui,sans-serif;cursor:pointer}.err{color:#f87171;margin:10px 0 0}.hint{color:#95a0ad;font-size:13px}</style></head>
+<body><form method="post" action="login"><h1>Dedupearr</h1><label for="u">User</label><input id="u" name="user" autocomplete="username" autofocus><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">__ERR__<button>Sign in</button>
+<p class="hint">The user and password are the container's <code>AUTH_USER</code> and <code>AUTH_PASSWORD</code>.</p></form></body></html>"""
+
 # ------------------------------------------------------------------------------------------------------------------- http
+ICON_LINK = '<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACNElEQVR42u2bO27DMAyGRUFbhy5ZOmY0kCvkGEXOaPQYuUKAjBm9ePHQNe3QqkhcS9aDpF7m4iWO+f2kJFKWQXjY6+7tSxRg0ziA62+hFuhQMWTN8C4MUCu4azbIVuBNbLIVeBOjFI0bcES/62/e91xPe5b5ALDhQ2BTiTKNA6AIQAlNKUa0AC7gMY5S//80DgCY8NTjluK5QQLMneAAp/LBW4DHB6cAx/ZHYo/JXMQgEaBGUxiK5zAHJBEghRDYwzBYgOtp/88Z7CXKtQ6IESUqAzSczQGqiRMr2xS2MyX1AmgC2JyMEYRjTkEVADv6HOW2yhGcc8VR1OBUqwCWEF69wBpwDnWArw/RQ4C7CsRecWRJ8BTPb74ZkpTjsYS+QGE6sTVDWzPUeDNEAXuWB3G8X/IuhW3OxYhyloe/6+79M/9mCDMLNLy28eNFCCHQhciyGZrDazveL6LrM5oDyJqh32jP4SmaIYUJjxGVcQH+J+2XJ9rY7EPfEsOGp15xVA7gNnjTpIclBEsztBZZX/hkzVBIxDWcCRITPsQ/stfjLmAx8Mlej/usAjbAUPgsDkj4LEFLRY1JgDk89aZrtACujpoqO1uhU2Q3SNn+Um24AMfx2K6/WbNgKfpcG67AeT7YZdxzG+uusIadX1MatHBCPJsMyFIAnw+MarNpHGDLgE0A4fedXU3p/5QBLYnwyLoNAZMyLUR/MQNqFmGJzQpbS5VoC6oMvbEG+NUMKDUjfAL3DbciWR5v94twAAAAAElFTkSuQmCC">'
 UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
 class Handler(SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -741,15 +790,37 @@ class Handler(SimpleHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         try: return json.loads(self.rfile.read(n) or b"{}") if n else {}
         except ValueError: return {}
+    def _auth(self):
+        """-> the user ('' when the page is open), or None when a sign-in is needed."""
+        if not auth_on(): return ""
+        ip = self.client_address[0]
+        u = session_user(self.headers.get("Cookie"))
+        if u: return u
+        if ip in ("127.0.0.1", "::1") and not any(self.headers.get(h) for h in PROXY_HEADERS): return "local"
+        if LOCAL_NO_LOGIN and direct_local(ip, self.headers): return "lan"
+        if TRUST_PROXY_AUTH and (self.headers.get("Remote-User") or self.headers.get("X-Remote-User")): return self.headers.get("Remote-User") or self.headers.get("X-Remote-User")
+        return None
+    def _login_page(self, bad=False):
+        b = LOGIN_HTML.replace("__ICON__", ICON_LINK).replace("__ERR__", '<p class="err">Wrong user or password.</p>' if bad else "").encode()
+        self.send_response(401 if bad else 200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def _redirect(self, to, cookie=None):
+        self.send_response(303); self.send_header("Location", to); self.send_header("Cache-Control", "no-store")
+        if cookie is not None: self.send_header("Set-Cookie", cookie)
+        self.end_headers()
     def do_GET(self):
         p = self.path.split("?")[0]
         try:
+            if p == "/login": return self._login_page()
+            if p == "/logout": return self._redirect("login", "dedupearr_s=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
+            who = self._auth() if p != "/health" else ""
+            if who is None: return self._json(401, {"error": "sign in first"}) if p.startswith("/api/") else self._redirect("login")
             if p in ("/", "/index.html"):
                 b = open(UI_PATH, "rb").read(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
             c = db()
             try:
-                if p == "/api/state": return self._json(200, state(c))
+                if p == "/api/state": return self._json(200, dict(state(c), auth={"enabled": auth_on(), "via": who if who in ("lan", "local") else ""}))
                 if p == "/api/about": return self._json(200, about(c))
                 if p == "/api/actions": return self._json(200, {"actions": actions(c), "fix_mode": FIX_MODE})
                 if p == "/health":
@@ -761,7 +832,15 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             note_error("request failed: " + str(e)); self._json(500, {"error": str(e)})
     def do_POST(self):
-        p = self.path.split("?")[0]; body = self._body()
+        p = self.path.split("?")[0]
+        if p == "/login":
+            n = int(self.headers.get("Content-Length") or 0); form = urllib.parse.parse_qs((self.rfile.read(n) if 0 < n < 4096 else b"").decode("utf-8", "replace"))
+            if auth_on() and check_password((form.get("user") or [""])[0], (form.get("password") or [""])[0]):
+                secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").lower() == "https" else ""
+                return self._redirect("./", f"dedupearr_s={session_cookie()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000{secure}")
+            time.sleep(1.5); log(f"sign-in refused from {self.client_address[0]}"); return self._login_page(bad=True)
+        if self._auth() is None: return self._json(401, {"error": "sign in first"})
+        body = self._body()
         try:
             if SANDBOX and not sandbox_rate_ok((self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()):
                 return self._json(429, {"error": f"slow down: the demo allows {SANDBOX_RATE} clicks a minute per visitor"})

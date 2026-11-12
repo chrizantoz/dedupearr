@@ -97,6 +97,7 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   }
   // P3.1: the banner follows the fix mode; a live fix needs two presses; the Actions tab shows the holding bin and the log, Put back posts the id
   const mode = data.state.fix_mode || "dryrun"; const live = new Set(data.state.live_kinds || []);
+  const au = data.state.auth || {}; check("Sign out shows only with a sign-in, and not when the home network let you in", $("#signout").hidden === !(au.enabled && !au.via), JSON.stringify(au));
   check("the banner says what fixes do in this mode", ({ dryrun: /Dry run is on/, off: /switched off/, on: /Fixes are on/ })[mode].test($("#banner").textContent), $("#banner").textContent);
   const liveRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind)).length;
   check("'Move to holding bin' appears exactly on rows whose fix is switched on", $$("#rows button[data-live='1']").length === liveRows, `${$$("#rows button[data-live='1']").length} vs ${liveRows}`);

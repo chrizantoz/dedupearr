@@ -97,7 +97,10 @@ Step-by-step for Unraid and docker compose: [docs/INSTALL.md](docs/INSTALL.md). 
 
 ## 🔒 Who can open the page
 
-Phase 1 has no sign-in: the page is open to whoever can reach the port, which at home means your local network. Put it behind your reverse proxy's login if you expose it. The page can only read and press *Ignore*; there is nothing destructive to protect yet. A built-in sign-in like Auditarr's comes with phase 3, before the first button that changes a file.
+Out of the box the page is open to whoever can reach the port, which at home means your local network. Set `AUTH_USER` and `AUTH_PASSWORD` and it asks for a sign-in (a plain login page, a signed session cookie, **Sign out** in the top bar; changing the password signs every browser out). `/health` stays open for monitoring.
+
+- **No sign-in at home, sign-in through your domain:** add `LOCAL_NO_LOGIN=1`. A browser on your own network (or tailnet) that opens the address and port directly gets straight in; anything that arrives through a reverse proxy, tunnel or CDN (it adds `X-Forwarded-For` or a similar header) is always asked, even though the proxy itself sits on your network.
+- **Already behind Authelia or Authentik:** `TRUST_PROXY_AUTH=1` lets their `Remote-User` header count as the sign-in, so you log in once.
 
 ## 🛡️ Is it safe? (yes: phase 1 changes nothing)
 
@@ -127,6 +130,9 @@ Phase 1 reads its settings from the environment; the About tab shows them (never
 | `FIX_MODE`, `HOLDING_DIR`, `HOLD_DAYS` | `dryrun`, `<first root>/.dedupearr-holding`, `14` | What a fix may do: `off`, `dryrun` (show the steps, change nothing) or `on` (arrives fix by fix in phase 3); where moved files wait and for how long before deletion |
 | `SEED_MIN_RATIO`, `SEED_MIN_DAYS`, `SEED_RULE` | `1.0`, `14`, `both` | Your seeding rule: a torrent is "done" when the ratio **and** the days are reached (`both`, safe for private trackers) or when one of them is (`either`); then a leftover or second copy "can go now" |
 | `CLIENT_PATH_MAP` | empty | `clientpath=ourpath,…` when a client sees the files under another path than Dedupearr does |
+| `AUTH_USER`, `AUTH_PASSWORD` | empty | Turn the sign-in on |
+| `LOCAL_NO_LOGIN` | `0` | `1` = no sign-in for a browser on your own network talking to the port directly; through a domain it still asks |
+| `TRUST_PROXY_AUTH` | `0` | `1` = a reverse proxy's `Remote-User` header counts as signed in |
 | `PORT` | `3092` | Web port |
 
 ## 🧑‍💻 For developers

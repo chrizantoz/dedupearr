@@ -55,8 +55,10 @@ s["last_run"] = dict(s["last_run"], note="failed: [Errno 13] Permission denied: 
 a["health"] = [{"level": "warn", "text": "The last scan failed: [Errno 13] Permission denied: '/data/torrents'"}, {"level": "warn", "text": "Scan root /data/usenet is not mounted or not a folder."}, {"level": "warn", "text": "3 errors in the last 24 hours."}]
 a["errors"] = [{"at": 1794438000, "text": "cannot list /data/torrents: [Errno 13] Permission denied"}] * 3
 write("errors", e)
+# errors world also checks the home-network case: sign-in on but the LAN let you in, so no Sign out
+e["state"]["auth"] = {"enabled": True, "via": "lan"}; write("errors", e)
 # live: FIX_MODE=on with the holding bin in use (P3.1): orphans offer a real move, everything else still previews, two files wait in the bin
-e = copy.deepcopy(base); s = e["state"]; s["fix_mode"] = "on"; s["live_kinds"] = ["bin"]
+e = copy.deepcopy(base); s = e["state"]; s["fix_mode"] = "on"; s["live_kinds"] = ["bin"]; s["auth"] = {"enabled": True, "via": ""}
 s["holding"] = {"days": 14, "dir": "/data/.dedupearr-holding", "bytes": 3 * 10**9, "bytes_h": "3 GB", "items": [
     {"id": 7, "orig": "/data/torrents/tv/Old.Show.S01E01.mkv", "title": "Old Show S01E01", "size": 2 * 10**9, "size_h": "2 GB", "kind": "bin", "why": "ORPHAN: Move the file into the holding bin.", "when": "2026-11-10T03:30", "days_left": 11.5, "note": ""},
     {"id": 8, "orig": "/data/usenet/movies/Some Film (2001).mkv", "title": "Some Film (2001)", "size": 10**9, "size_h": "1 GB", "kind": "bin", "why": "ORPHAN: Move the file into the holding bin.", "when": "2026-11-11T03:30", "days_left": 12.5, "note": ""}]}
