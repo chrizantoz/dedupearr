@@ -22,8 +22,9 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 
 Each line: the pattern → the guard that stops it now → the idea it left for later.
 
-- **Usenet is not torrents** (#18 by a contributor: 243 GB of a failed NZBGet job hidden as "Seeding only"). → Finished or failed usenet jobs nobody imported are *Download without a match*; a test and a mutant guard it. → 💡 #20: a still-downloading usenet job gets its own label; a finished one waiting for an arr import says so.
+- **Usenet is not torrents** (#18 by a contributor: 243 GB of a failed NZBGet job hidden as "Seeding only"). → Finished or failed usenet jobs nobody imported are *Download without a match*; a test and a mutant guard it. → #20 done 2026-11-12: *Still downloading* and *Waiting for import* (with the arr's reason when it is stuck).
 - **What the clients said must survive a restart** (#17). → Stored and reloaded at start. → 💡 The page bot restarts the app mid-session and expects the same answers.
+- **A test that runs one case a day can break quietly** (2026-11-12: a security fix moved the line one mutant looks for; the daily rotation would not have said so for weeks). → `mutation_check.py anchors` checks every mutant's line on every CI run.
 - **A security scanner cannot see guards that are spread out** (CodeQL #3–#8). → Look up first, act on the looked-up value. → 💡 Write file actions in that order from the start.
 
 ## Phase 1 · Scan and tell (read-only) — 2026-11-11
