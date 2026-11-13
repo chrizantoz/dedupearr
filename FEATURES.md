@@ -27,6 +27,8 @@ The left column is the internal code (handy when searching the code or the API);
 | DOWNLOAD_OTHER_RELEASE | no identical file, but the library holds a different release of the same title (matched on title and year, or title and episode): most likely a leftover from an upgrade | the file's size, counted as "to decide" |
 | LEFTOVER | an arr's history says this download was imported, and the library file it became has since been replaced or rewritten | the file's size |
 | ORPHAN | no download client knows the file and no arr imported it; nothing holds it | the file's size |
+| DOWNLOADING | a client is still downloading it (usenet or torrent); looked at again once it finishes | 0 |
+| AWAITING_IMPORT | finished, and Sonarr/Radarr/… has it in its queue to import, or cannot import it on its own (the reason is shown, with where to fix it) | 0 |
 | SEEDING_ONLY | a client seeds it and no arr ever imported it (software, extras, torrents you keep on purpose) | 0 |
 | BIN_OLD | in a recycle bin longer than `RECYCLE_DAYS` | the file's size |
 | BIN_RECENT | in a recycle bin, within the rule | 0 |

@@ -4,6 +4,7 @@ All dates 2026. Image: `ghcr.io/chrizantoz/dedupearr`.
 
 ## Unreleased — phase 2, ask the apps; phase 3 begins (2026-11-12)
 
+- New verdicts **Still downloading** (a client is still downloading it; no more "Seeding only" and torrent words for a usenet job) and **Waiting for import** (finished, and an arr's queue is importing it, or cannot import it on its own; the arr's reason is shown, with where to fix it). Raised by @jonneyblaze in #18 (#20).
 - Security: the password set in the container settings is slow-hashed like a page-set one; the holding bin looks up the scan's record before touching the disk (CodeQL, #21). New `alerts` workflow turns each code-scanning alert into an issue every morning.
 - Phase 3 starts as a dry run: every fixable row has a **Preview fix** button that shows the exact steps (relink, remove through the client, holding bin, empty an old bin) and the space it would free; `FIX_MODE=dryrun` is the default and nothing is moved, linked or deleted. Every preview is written to the actions log (`/api/actions`). A fix is refused while a scan runs. The real fixes arrive one at a time behind that switch, each with a holding bin and a 14-day undo.
 

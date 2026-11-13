@@ -14,7 +14,7 @@ results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:240]}]"))
 r = d.scan(now=now); c = d.db(); S = d.state(c); by = {i["path"]: i for i in S["items"]}
 code = lambda k: by.get(P[k], {}).get("code")
-check("paths() of an existing fake disk equals what build() returned (the demo relies on it)", {k: v for k, v in fake_disk.paths(DATA).items()} == {k: v for k, v in P.items() if k not in ("soft", "usenet", "usenet_new", "usenet_failed", "usenet_failed2")}, "")
+check("paths() of an existing fake disk equals what build() returned (the demo relies on it)", {k: v for k, v in fake_disk.paths(DATA).items()} == {k: v for k, v in P.items() if k not in mock_clients.extra_files(DATA, lambda *a: a[0])}, "")
 check("every client and arr was read", all(v["ok"] for v in d.CLIENT_STATUS.values()) and set(d.CLIENT_STATUS) == {"Deluge", "NZBGet", "qBittorrent", "Sonarr", "Radarr"}, d.CLIENT_STATUS)
 check("identical copy seeding past the rule: Stored twice, can go now", code("dup_dl") == "DUPLICATE_COPY" and by[P["dup_dl"]]["removable"] and "can go now" in by[P["dup_dl"]]["plain"], by.get(P["dup_dl"], {}).get("plain"))
 check("header-differs copy still seeding: Stored twice, header differs, not removable, the sentence names the rule", code("hdr_dl") == "DUPLICATE_HEADER" and not by[P["hdr_dl"]]["removable"] and "still seeding" in by[P["hdr_dl"]]["plain"] and "ratio 1" in by[P["hdr_dl"]]["plain"], by.get(P["hdr_dl"], {}).get("plain", "")[-200:])
@@ -35,7 +35,14 @@ check("Scary Movie: different release, ratio reached but only 3 of 14 days = sti
 check("a same-size lookalike that no client and no arr knows = Orphan (nothing holds it)", code("look_dl") == "ORPHAN" and by[P["look_dl"]]["wasted"] == by[P["look_dl"]]["size"] and by[P["look_dl"]]["removable"], by.get(P["look_dl"]))
 check("software torrent seeding, never imported = Seeding only, not waste, not needs-you", code("soft") == "SEEDING_ONLY" and by[P["soft"]]["wasted"] == 0 and not by[P["soft"]]["needs_you"], by.get(P["soft"]))
 check("usenet download imported by Sonarr, library file gone = Leftover with 'no seeding to wait for'", code("usenet") == "LEFTOVER" and "usenet" in by[P["usenet"]]["plain"] and by[P["usenet"]]["removable"], by.get(P["usenet"], {}).get("plain"))
-check("a usenet download still in NZBGet's queue is not removable", code("usenet_new") in ("DOWNLOAD_UNMATCHED", "SEEDING_ONLY") and not by[P["usenet_new"]]["removable"], by.get(P["usenet_new"]))
+check("a usenet download still in NZBGet's queue is not removable", code("usenet_new") in ("DOWNLOAD_UNMATCHED", "SEEDING_ONLY", "DOWNLOADING") and not by[P["usenet_new"]]["removable"], by.get(P["usenet_new"]))
+# #20 (raised in #18): a download still coming in is "Still downloading", never "Seeding only" with torrent words
+check("a usenet download still in NZBGet's queue = Still downloading, not waste, not needs-you, no seeding or torrent words",
+      code("usenet_new") == "DOWNLOADING" and by[P["usenet_new"]]["wasted"] == 0 and not by[P["usenet_new"]]["needs_you"] and not any(w in by[P["usenet_new"]]["plain"].lower() for w in ("seed", "torrent")), by.get(P["usenet_new"], {}).get("plain"))
+check("a finished download Sonarr is about to import = Waiting for import, not waste, names Sonarr",
+      code("await_imp") == "AWAITING_IMPORT" and by[P["await_imp"]]["wasted"] == 0 and not by[P["await_imp"]]["needs_you"] and not by[P["await_imp"]]["removable"] and "Sonarr" in by[P["await_imp"]]["plain"], by.get(P["await_imp"], {}).get("plain"))
+check("a finished download Radarr cannot import says so, gives Radarr's reason and where to fix it, and is never 'can go'",
+      code("blocked_imp") == "AWAITING_IMPORT" and "cannot import it on its own" in by[P["blocked_imp"]]["plain"] and "Manual Import required" in by[P["blocked_imp"]]["plain"] and "Activity queue" in by[P["blocked_imp"]]["plain"] and not by[P["blocked_imp"]]["removable"], by.get(P["blocked_imp"], {}).get("plain"))
 check("a failed usenet job nobody imported is never 'Seeding only': it is a download to decide on, counted in full, needs you, can go now (seen on a real server 2026-11-12)",
       code("usenet_failed") == "DOWNLOAD_UNMATCHED" and by[P["usenet_failed"]]["wasted"] == by[P["usenet_failed"]]["size"] and by[P["usenet_failed"]]["needs_you"] and by[P["usenet_failed"]]["removable"], by.get(P["usenet_failed"]))
 check("the same, for a failed-job file whose size nothing in the library shares", code("usenet_failed2") == "DOWNLOAD_UNMATCHED" and by[P["usenet_failed2"]]["wasted"] == by[P["usenet_failed2"]]["size"] and by[P["usenet_failed2"]]["needs_you"], by.get(P["usenet_failed2"]))

@@ -12,7 +12,9 @@ def extra_files(DATA, blob):
             "usenet": blob(f"{DATA}/completed/tv/Show.S01E01.1080p.WEB/Show.S01E01.1080p.WEB.mkv", 2, "usenet-show"),
             "usenet_new": blob(f"{DATA}/completed/tv/Fresh.S01E02.1080p.WEB/Fresh.S01E02.1080p.WEB.mkv", 2, "usenet-fresh"),
             "usenet_failed": blob(f"{DATA}/incomplete/Big.Pack.2160p.#54/Big.Pack.Scene.03.2160p.mp4", 2, "usenet-failed"),   # same size as library files: the lookalike path
-            "usenet_failed2": blob(f"{DATA}/incomplete/Big.Pack.2160p.#54/Big.Pack.Scene.04.2160p.mp4", 3, "usenet-failed-2")}   # a size nothing shares: the unmatched path
+            "usenet_failed2": blob(f"{DATA}/incomplete/Big.Pack.2160p.#54/Big.Pack.Scene.04.2160p.mp4", 3, "usenet-failed-2"),
+            "await_imp": blob(f"{DATA}/completed/tv/Later.Show.S02E01.1080p.WEB/Later.Show.S02E01.1080p.WEB.mkv", 4, "await-import"),   # #20: finished, Sonarr is about to import it
+            "blocked_imp": blob(f"{DATA}/completed/movies/Odd.Film.2025.1080p.WEB/Odd.Film.2025.1080p.WEB.mkv", 5, "blocked-import")}   # #20: finished, Radarr cannot import it on its own   # a size nothing shares: the unmatched path
 
 def world_for(P, DATA):
     """What the fake clients and arrs know about the fake disk (P = paths from fake_disk.build + extra_files)."""
@@ -23,7 +25,13 @@ def world_for(P, DATA):
         {"id": "scary", "name": "Scary.Movie.2026.1080p.BluRay.x264-EniaHD", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["other_dl"])], "state": "Seeding", "ratio": 1.31, "seeding_time": 3 * 86400, "label": "movies"},
         {"id": "soft", "name": "Some.App.2026", "save_path": f"{DATA}/torrents/software", "files": [rel(P["soft"])], "state": "Seeding", "ratio": 0.4, "seeding_time": 2 * 86400, "label": ""}],
         "nzbget": [{"id": 7, "name": "Show.S01E01.1080p.WEB", "dir": os.path.dirname(P["usenet"]), "label": "tv"},
-                   {"id": 54, "name": "Big.Pack.2160p", "dir": os.path.dirname(P["usenet_failed"]), "label": "", "status": "FAILURE/HEALTH"}],   # a failed job whose partial files stayed in incomplete/ (seen on a real server 2026-11-12: 243 GB)
+                   {"id": 54, "name": "Big.Pack.2160p", "dir": os.path.dirname(P["usenet_failed"]), "label": "", "status": "FAILURE/HEALTH"},
+                   {"id": 61, "name": "Later.Show.S02E01.1080p.WEB", "dir": os.path.dirname(P["await_imp"]), "label": "tv"},
+                   {"id": 62, "name": "Odd.Film.2025.1080p.WEB", "dir": os.path.dirname(P["blocked_imp"]), "label": "movies"}],
+        # each arr's queue (what Sonarr/Radarr return from /api/v3/queue, trimmed to the fields used): one waiting, one blocked
+        "queue": {"sonarr": [{"title": "Later.Show.S02E01.1080p.WEB", "outputPath": os.path.dirname(P["await_imp"]), "trackedDownloadState": "importPending", "trackedDownloadStatus": "ok", "statusMessages": []}],
+                  "radarr": [{"title": "Odd.Film.2025.1080p.WEB", "outputPath": os.path.dirname(P["blocked_imp"]), "trackedDownloadState": "importPending", "trackedDownloadStatus": "warning",
+                              "statusMessages": [{"title": "Odd.Film.2025.1080p.WEB", "messages": ["Found matching movie via grab history, but release was matched to movie by ID. Manual Import required."]}]}]},   # a failed job whose partial files stayed in incomplete/ (seen on a real server 2026-11-12: 243 GB)
         "nzbget_queue": [{"id": 8, "name": "Fresh.S01E02.1080p.WEB", "dir": os.path.dirname(P["usenet_new"]), "label": "tv"}],
         "qbit": [],
         "arr": {"sonarr": [{"eventType": "downloadFolderImported", "date": "2026-10-14T03:00:00Z", "sourceTitle": "Shogun.S01E05.1080p.WEB.h264-GRP", "data": {"droppedPath": P["unmatched"], "importedPath": f"{DATA}/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv"}},
@@ -82,6 +90,9 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                     if self.headers.get("X-Api-Key") != "test": return self._send({"error": "Unauthorized"}, 401)
                     recs = world.get("arr", {}).get(app, []); page = int(q.get("page", ["1"])[0]); size = int(q.get("pageSize", ["500"])[0])
                     return self._send({"page": page, "pageSize": size, "totalRecords": len(recs), "records": recs[(page - 1) * size: page * size]})
+                if u.path == f"/{app}/api/{v}/queue":
+                    if self.headers.get("X-Api-Key") != "test": return self._send({"error": "Unauthorized"}, 401)
+                    recs = world.get("queue", {}).get(app, []); return self._send({"page": 1, "pageSize": 500, "totalRecords": len(recs), "records": recs})
                 if u.path == f"/{app}/api/v3/system/status": return self._send({"appName": app, "version": "4.0.0"})
             self._send({"error": "not found"}, 404)
         def do_POST(self):

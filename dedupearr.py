@@ -22,6 +22,8 @@ Verdict codes (never shown raw; see LABEL and sentence()):
   LEFTOVER           an arr imported this download and the library has since replaced or rewritten that file  wasted size
   ORPHAN             no client knows the file and no arr imported it                                wasted size
   SEEDING_ONLY       a client seeds it and no arr ever imported it (software, extras, kept torrents) wasted 0
+  DOWNLOADING        a client is still downloading it                                              wasted 0
+  AWAITING_IMPORT    finished, and an arr has it in its queue waiting to import (or blocked)        wasted 0
 Phase 3 (in progress): /api/fix shows the plan for a row (relink, remove through the client, holding bin, empty an old bin). FIX_MODE=dryrun by default:
 nothing is touched. With FIX_MODE=on the fixes in LIVE_KINDS run (P3.1: orphans move to the holding bin); /api/restore puts a held file back for HOLD_DAYS.
   BIN_OLD            in a recycle bin longer than RECYCLE_DAYS                                     wasted size
@@ -211,6 +213,28 @@ def read_arr_imports():
         except Exception as e: CLIENT_STATUS[app.capitalize()] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{app}: {e}")
     return out
 
+IMPORT_WAIT = {"importPending": "waiting to import it", "importing": "importing it right now", "importBlocked": "cannot import it on its own"}
+def read_arr_queue():
+    """#20: what each arr is about to import. outputPath (the finished download, mapped) -> {app, state, why, title}. Only waiting/importing/blocked items."""
+    out = {}
+    for app, cfg in ARRS.items():
+        if not cfg["url"] or not cfg["key"]: continue
+        try:
+            r = http_json(f"{cfg['url']}/api/{api_v(app)}/queue?page=1&pageSize=500&includeUnknownSeriesItems=true&includeUnknownMovieItems=true", headers={"X-Api-Key": cfg["key"]})
+            for rec in (r.get("records") or []) if isinstance(r, dict) else []:
+                st = rec.get("trackedDownloadState") or ""; op = map_client_path(rec.get("outputPath") or "")
+                if st not in IMPORT_WAIT or not op: continue
+                msgs = [m for sm in (rec.get("statusMessages") or []) for m in (sm.get("messages") or [])]
+                out[op.rstrip("/")] = {"app": app, "state": "importBlocked" if st == "importPending" and rec.get("trackedDownloadStatus") == "warning" and msgs else st, "why": (msgs[0] if msgs else "")[:160], "title": rec.get("title") or ""}
+        except Exception as e: note_error(f"{app} queue: {e}")
+    return out
+def queue_for(path, queue):
+    d = path.rstrip("/")
+    while len(d) > 1:
+        if d in queue: return queue[d]
+        d = os.path.dirname(d)
+    return None
+
 def gather_context():
     """Ask every configured client and arr once per scan. A client that fails is reported on About and simply leaves its files unexplained."""
     clients = {}
@@ -218,7 +242,7 @@ def gather_context():
         if not CLIENTS[name]["url"]: CLIENT_STATUS.pop(name, None); continue
         try: clients.update(fn())
         except Exception as e: CLIENT_STATUS[name] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{name}: {e}")
-    ctx = {"clients": clients, "imports": read_arr_imports(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
+    ctx = {"clients": clients, "imports": read_arr_imports(), "queue": read_arr_queue(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
     try:   # remembered across restarts, so the page and About stay consistent until the next scan asks again
         c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); c.close()
     except Exception as e: log(f"could not remember the client status: {e}")
@@ -281,7 +305,7 @@ def db():
         restored REAL, purged REAL, note TEXT);
     """)
     cols = {r[1] for r in c.execute("PRAGMA table_info(verdict)")}
-    for col, typ in (("client", "TEXT"), ("removable", "INTEGER"), ("category", "TEXT")):
+    for col, typ in (("client", "TEXT"), ("removable", "INTEGER"), ("category", "TEXT"), ("queue", "TEXT")):
         if col not in cols: c.execute(f"ALTER TABLE verdict ADD COLUMN {col} {typ}")
     return c
 
@@ -425,8 +449,9 @@ def scan(c=None, now=None):
         if own: c.close()
 
 def judge(c, now, ctx=None):
-    ctx = ctx or {"clients": {}, "imports": {}, "clients_ok": False}; clients, imports, clients_ok = ctx["clients"], ctx["imports"], ctx.get("clients_ok", False)
+    ctx = ctx or {"clients": {}, "imports": {}, "clients_ok": False}; clients, imports, clients_ok = ctx["clients"], ctx["imports"], ctx.get("clients_ok", False); queue = ctx.get("queue") or {}
     extra = {}   # path -> (client info or None, removable)
+    extra_q = {}   # path -> what the arr's queue says (#20)
     rows = [dict(r) for r in c.execute("SELECT * FROM file")]
     groups = {}
     for r in rows: groups.setdefault((r["dev"], r["ino"]), []).append(r)
@@ -480,6 +505,10 @@ def judge(c, now, ctx=None):
                 gone = not os.path.exists(ai["imported"])
                 code, twin = "LEFTOVER", twin or ai["imported"]
                 ev += f"; {ai['app'].capitalize()} imported it on {ai['when']} to {ai['imported']}" + (", and that file has since been replaced" if gone else ", which has since been rewritten (different content now)")
+            elif (aq := queue_for(r["path"], queue)) and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"):   # #20: finished, and the arr is about to import it (or is stuck)
+                code, twin = "AWAITING_IMPORT", None; ev += f"; {aq['app'].capitalize()} is {IMPORT_WAIT[aq['state']]}" + (f": {aq['why']}" if aq["why"] else ""); extra_q[r["path"]] = aq
+            elif ci and not ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"):   # #20: still coming in; neither seeding nor waste yet
+                code, twin = "DOWNLOADING", None; ev += "; still downloading"
             elif clients_ok and ci is None and any(a["url"] for a in ARRS.values()): code = "ORPHAN"; ev += "; no download client knows this file and no arr imported it"
             elif ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()):   # a finished (or failed) usenet job nobody imported holds space for nothing: to decide, never "seeding only"
                 if code == "LOOKALIKE": code, twin, ev = "DOWNLOAD_UNMATCHED", None, f"inode {r['ino']}, link count {r['nlink']}, same size as a library file but different content"
@@ -501,10 +530,10 @@ def judge(c, now, ctx=None):
     seen = set(verdicts)
     for path, (code, kind, size, wasted, twin, ev) in verdicts.items():
         ci, rem = extra.get(path, (None, True)); cat = category_of(path, ctx, twin if code in TWIN_IS_EVIDENCE else None, ci, imports.get(path))
-        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen,client,removable,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen,client,removable,category,queue) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                      ON CONFLICT(path) DO UPDATE SET code=excluded.code,title=excluded.title,kind=excluded.kind,size=excluded.size,wasted=excluded.wasted,
-                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen,client=excluded.client,removable=excluded.removable,category=excluded.category""",
-                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now, json.dumps(ci) if ci else None, 1 if rem else 0, cat))
+                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen,client=excluded.client,removable=excluded.removable,category=excluded.category,queue=excluded.queue""",
+                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now, json.dumps(ci) if ci else None, 1 if rem else 0, cat, json.dumps(extra_q[path]) if path in extra_q else None))
     for r in c.execute("SELECT path FROM verdict").fetchall():
         if r["path"] not in seen: c.execute("DELETE FROM verdict WHERE path=?", (r["path"],))
     c.commit()
@@ -513,7 +542,7 @@ def judge(c, now, ctx=None):
 # ---------------------------------------------------------------------------------------------------------- plain words
 LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": "Two names, one file", "LINKED_SEED": "Seeding name",
          "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match", "DOWNLOAD_OTHER_RELEASE": "Different release in library",
-         "LEFTOVER": "Leftover from an upgrade", "ORPHAN": "Orphan", "SEEDING_ONLY": "Seeding only",
+         "LEFTOVER": "Leftover from an upgrade", "ORPHAN": "Orphan", "SEEDING_ONLY": "Seeding only", "DOWNLOADING": "Still downloading", "AWAITING_IMPORT": "Waiting for import",
          "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "OTHER": "Unsorted folder"}
 NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"}
 def seed_sentence(ci):
@@ -528,6 +557,11 @@ def sentence(v):
     tail = (" " + seed_sentence(ci)) if (ci or v.get("clients_known")) else ""
     if code == "LEFTOVER": return f"A leftover from an upgrade: this download was imported into the library and the library has since moved on ({t} is what it keeps now). {size} to get back.{tail}"
     if code == "ORPHAN": return f"An orphan: no download client knows this file and no arr imported it. {size} to get back. Nothing holds it, so it can go now."
+    if code == "DOWNLOADING": return f"Still downloading in {ci['client'] if ci else 'your download client'}. Nothing to judge yet; it is looked at again once it finishes."
+    if code == "AWAITING_IMPORT":
+        aq = v.get("queue") if isinstance(v.get("queue"), dict) else (json.loads(v["queue"]) if v.get("queue") else {}); app = (aq.get("app") or "your arr").capitalize()
+        if aq.get("state") == "importBlocked": return f"Finished, but {app} cannot import it on its own" + (f" ({aq['why'].rstrip('.')})" if aq.get("why") else "") + f". Open {app}'s Activity queue and import it by hand or remove it there; Dedupearr leaves it alone."
+        return f"Finished, and {app} is {IMPORT_WAIT.get(aq.get('state'), 'about to import it')}. Nothing to do; once it is in the library this download is judged like any other."
     if code == "SEEDING_ONLY": return f"Kept for seeding: {ci['client'] if ci else 'your client'} is seeding it and nothing in the library came from it. Not counted as waste; it goes when you remove the torrent."
     if code == "REAL_COPY": return "One file with two names: the library and the download folder share it, so seeding costs no extra space."
     if code == "LINKED_SEED": return f"This is the download-folder name of the library file {t}. Same file, no extra space."
