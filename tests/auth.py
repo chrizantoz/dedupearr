@@ -85,4 +85,10 @@ st, h, j = lan("/api/setpassword", {"password": "x" * 9, "current": "env passwor
 d.AUTH_USER, d.AUTH_PASSWORD = "", ""
 st, h, j = lan("/api/setpassword", {"off": True, "current": "another pass 2"}, {"Cookie": "dedupearr_s=" + d.session_cookie()}); check("Turn sign-in off (with the current password) opens the page again", st == 200 and d.account() is None, (st, j))
 ui = open(os.path.join(ROOT, "ui.html")).read(); check("the page has its icon in the tab", 'rel="icon" type="image/png" href="data:image/png;base64,' in ui)
+# CodeQL #11/#12 (2026-11-12): the container-settings password was compared through a plain SHA-256; it is now slow-hashed like a page-set one
+import hashlib as _hl  # noqa: E402
+d.AUTH_USER, d.AUTH_PASSWORD = "owner", "correct horse battery"
+fp_ = d.account()["fp"]; check("the container-settings password is never kept as a quick SHA-256", fp_ != _hl.sha256(b"correct horse battery").hexdigest() and fp_ == d._pbkdf("correct horse battery", "dedupearr-env:owner"))
+check("it still signs in with the right password and refuses a wrong one", d.check_password("owner", "correct horse battery") and not d.check_password("owner", "correct horse batterY"))
+d.AUTH_USER, d.AUTH_PASSWORD = "", ""
 srv.shutdown(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)

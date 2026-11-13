@@ -576,11 +576,13 @@ def hold_file(c, path, kind, why, now=None):
     """Move one file into the holding bin after checking it is still the file the scan judged. Returns (code, obj). Nothing is ever deleted here."""
     now = now or time.time()
     if not under_roots(path): return 400, {"error": "that file is outside the folders Dedupearr scans"}
-    f = c.execute("SELECT dev, ino, size FROM file WHERE path=?", (path,)).fetchone()
+    f = c.execute("SELECT path, dev, ino, size FROM file WHERE path=?", (path,)).fetchone()   # only a file the scan itself recorded, and from here on the recorded path (CodeQL #3-#8)
+    if not f: return 409, {"error": "the last scan has no record of that file, so nothing was moved; scan again and look at the row once more"}
+    path = f["path"]
     try: st = os.lstat(path)
     except FileNotFoundError: return 409, {"error": "the file is no longer there; the next scan drops the row"}
     if not stat_regular(st): return 400, {"error": "that is not a plain file, so it is left alone"}
-    if not f or (st.st_dev, st.st_ino, st.st_size) != (f["dev"], f["ino"], f["size"]): return 409, {"error": "the file changed since the last scan, so nothing was moved; scan again and look at the row once more"}
+    if (st.st_dev, st.st_ino, st.st_size) != (f["dev"], f["ino"], f["size"]): return 409, {"error": "the file changed since the last scan, so nothing was moved; scan again and look at the row once more"}
     dest = hold_target(path, now)
     if os.path.lexists(dest): return 409, {"error": "the holding bin already holds a file at that place; nothing was moved"}
     try:
@@ -748,9 +750,13 @@ PROXY_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-
 ROUTER_WARNING = "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."
 AUTH_CACHE = {}
 def _pbkdf(password, salt): return hashlib.pbkdf2_hmac("sha256", (password or "").encode(), salt.encode(), 200_000).hex()
+def _env_fp():
+    """The container-settings password, slow-hashed like a page-set one (CodeQL #11/#12: a plain SHA-256 was quick to brute-force). Worked out once per password."""
+    if "env-last" not in AUTH_CACHE or AUTH_CACHE["env-last"][0] != (AUTH_USER, AUTH_PASSWORD): AUTH_CACHE["env-last"] = ((AUTH_USER, AUTH_PASSWORD), _pbkdf(AUTH_PASSWORD, "dedupearr-env:" + AUTH_USER))
+    return AUTH_CACHE["env-last"][1]
 def account():
     """{"user", "source": "env"|"page", "fp": a fingerprint that changes with the password} or None (open page)."""
-    if AUTH_USER and AUTH_PASSWORD: return {"user": AUTH_USER, "source": "env", "fp": hashlib.sha256(AUTH_PASSWORD.encode()).hexdigest()}
+    if AUTH_USER and AUTH_PASSWORD: return {"user": AUTH_USER, "source": "env", "fp": _env_fp()}
     if "page" not in AUTH_CACHE:
         c = db()
         try: v = kv_get(c, "auth"); AUTH_CACHE["page"] = json.loads(v) if v else None
@@ -808,7 +814,7 @@ def check_password(user, password):
     import hmac
     a = account()
     if not a: return False
-    pw = hashlib.sha256((password or "").encode()).hexdigest() if a["source"] == "env" else _pbkdf(password, a["salt"])
+    pw = _pbkdf(password, "dedupearr-env:" + AUTH_USER) if a["source"] == "env" else _pbkdf(password, a["salt"])
     return hmac.compare_digest((user or "").encode(), a["user"].encode()) & hmac.compare_digest(pw.encode(), a["fp"].encode())
 def auth_state(who):
     a = account()

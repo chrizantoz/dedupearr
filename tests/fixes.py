@@ -72,4 +72,8 @@ check("a read-only test target exists", tgt is not None)
 if tgt and os.geteuid() != 0:
     code, obj = d.ui_fix(c, tgt["path"]); check("a read-only place says so in plain words and moves nothing", code == 409 and "read-only" in obj["error"] and os.path.exists(tgt["path"]), obj)
 os.chmod(ro, 0o700); d.HOLDING_DIR = old; d.FIX_MODE = "dryrun"
+# CodeQL #3-#8 (2026-11-12): the holding bin acts only on a file the last scan recorded, before it touches the disk
+stray = os.path.join(DATA, "not-scanned.mkv"); open(stray, "wb").write(b"x" * 2048); d.FIX_MODE = "on"
+code_, obj_ = d.hold_file(c, stray, "test", "test"); check("a file inside the folders that the scan never recorded is refused and stays put", code_ == 409 and os.path.exists(stray) and "no record" in obj_["error"], (code_, obj_))
+os.remove(stray); d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)

@@ -10,6 +10,21 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 - **The board** across both apps: https://github.com/users/chrizantoz/projects/1 (cards grouped by status, app, area or phase).
 - **GitHub Issues** is the inbox and the day-to-day list. Anything found along the way becomes one issue with one label: `bug`, `bot` (the test bots), `feature`, `ux` (friendlier wording, navigation, flow), `design` (look and feel), `idea`, `owner-step`. Milestones match the phases here.
 - **Rule:** an idea is written down the moment it comes up, as an issue, not remembered. When an issue ships, this file gets its line and the issue closes.
+- **GitHub's own bots count too (added 2026-11-12).** Code scanning (CodeQL), Dependabot and secret scanning alerts become issues labelled `security`, opened by the `alerts` workflow every morning (one issue per alert, never twice). Each one is fixed with a test, or dismissed on GitHub with a written reason; never left open without a look.
+- **Every bug teaches something.** When a bug is fixed, its lesson goes under *What bugs taught us* below: the pattern behind it, the guard that now stops it (a test or a bot world), and any idea it gave for later (filed as an `idea` issue).
+
+## 🛡️ Security alerts
+
+- 🟢 (2026-11-12) CodeQL #11/#12: the container-settings password was compared through a quick SHA-256; it is now slow-hashed (PBKDF2, 200k rounds) like a page-set one. Gate: `tests/auth.py`.
+- 🟢 (2026-11-12) CodeQL #3–#8: the holding bin now looks up the scan's record of a file before it touches the disk, and works only from the recorded path. The old checks (inside the scan folders, same file as scanned) already stopped misuse; this makes the order plain. Gate: `tests/fixes.py`.
+
+## 📚 What bugs taught us (added 2026-11-12)
+
+Each line: the pattern → the guard that stops it now → the idea it left for later.
+
+- **Usenet is not torrents** (#18 by a contributor: 243 GB of a failed NZBGet job hidden as "Seeding only"). → Finished or failed usenet jobs nobody imported are *Download without a match*; a test and a mutant guard it. → 💡 #20: a still-downloading usenet job gets its own label; a finished one waiting for an arr import says so.
+- **What the clients said must survive a restart** (#17). → Stored and reloaded at start. → 💡 The page bot restarts the app mid-session and expects the same answers.
+- **A security scanner cannot see guards that are spread out** (CodeQL #3–#8). → Look up first, act on the looked-up value. → 💡 Write file actions in that order from the start.
 
 ## Phase 1 · Scan and tell (read-only) — 2026-11-11
 
