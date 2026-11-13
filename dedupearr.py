@@ -63,7 +63,7 @@ CLIENTS = {"Deluge": {"url": _env("DELUGE_URL").rstrip("/"), "password": _env("D
            "NZBGet": {"url": _env("NZBGET_URL").rstrip("/"), "user": _env("NZBGET_USER"), "password": _env("NZBGET_PASSWORD")},
            "qBittorrent": {"url": _env("QBIT_URL").rstrip("/"), "user": _env("QBIT_USER"), "password": _env("QBIT_PASSWORD")}}
 SEED_MIN_RATIO = float(_env("SEED_MIN_RATIO", "1.0") or 1.0); SEED_MIN_DAYS = float(_env("SEED_MIN_DAYS", "14") or 14)
-SEED_RULE = _env("SEED_RULE", "both").lower()   # "both": ratio AND days must be reached (safe for private trackers, the default); "either": one of them is enough
+SEED_RULE = _env("SEED_RULE", "auto").lower()   # "auto" (default): private torrents need ratio AND days, public ones either; "both" / "either" for every torrent
 CLIENT_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("CLIENT_PATH_MAP").split(",") if "=" in x]   # clientpath=ourpath when a client sees the files under another path
 CLIENT_STATUS = {}   # "Deluge" -> {"ok": bool, "n": int, "note": str}; shown on About
 
@@ -95,13 +95,14 @@ def read_deluge():
     if not call("web.connected", []):
         hosts = call("web.get_hosts", []) or []
         if hosts: call("web.connect", [hosts[0][0]])
-    fields = ["name", "save_path", "state", "ratio", "seeding_time", "time_added", "label", "total_size", "is_finished", "progress", "files"]
+    fields = ["name", "save_path", "state", "ratio", "seeding_time", "time_added", "label", "total_size", "is_finished", "progress", "files", "private"]
     ts = call("core.get_torrents_status", [{}, fields]) or {}
     out = {}
     for tid, t in ts.items():
         for f in t.get("files") or []:
             out[map_client_path(os.path.join(t["save_path"], f["path"]))] = {"client": "Deluge", "name": t["name"], "state": str(t.get("state", "")).lower(), "ratio": float(t.get("ratio") or 0),
-                                                                            "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("label") or "", "finished": bool(t.get("is_finished")), "id": tid}
+                                                                            "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("label") or "", "finished": bool(t.get("is_finished")), "id": tid,
+                                                                            "private": t.get("private") if isinstance(t.get("private"), bool) else None}
     CLIENT_STATUS["Deluge"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
 
 def read_nzbget():
@@ -130,7 +131,8 @@ def read_qbit():
     for t in ts:
         for f in http_json(base + "/torrents/files?hash=" + t["hash"], cj=cj) or []:
             out[map_client_path(os.path.join(t["save_path"], f["name"]))] = {"client": "qBittorrent", "name": t["name"], "state": str(t.get("state", "")).lower(), "ratio": float(t.get("ratio") or 0),
-                                                                             "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("category") or "", "finished": float(t.get("progress") or 0) >= 1, "id": t["hash"]}
+                                                                             "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("category") or "", "finished": float(t.get("progress") or 0) >= 1, "id": t["hash"],
+                                                                             "private": next((t[k] for k in ("private", "is_private", "isPrivate") if isinstance(t.get(k), bool)), None)}
     CLIENT_STATUS["qBittorrent"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
 
 def api_v(app): return "v1" if app == "lidarr" else "v3"
@@ -270,7 +272,23 @@ def seeding_done(ci):
     if not ci.get("finished"): return False
     if ci.get("client") == "NZBGet": return True
     r_ok, d_ok = ci.get("ratio", 0) >= SEED_MIN_RATIO, ci.get("seeding_days", 0) >= SEED_MIN_DAYS
-    return (r_ok or d_ok) if SEED_RULE == "either" else (r_ok and d_ok)
+    return (r_ok or d_ok) if rule_for(ci) == "either" else (r_ok and d_ok)
+
+def rule_for(ci):
+    """The seeding rule for this torrent: 'both' or 'either'. With SEED_RULE=auto (2026-11-13, owner: "some are private but most are public")
+    a private torrent needs ratio AND days; a public one either; a client that does not say is treated as private (the safe side)."""
+    if SEED_RULE in ("both", "either"): return SEED_RULE
+    return "either" if (ci or {}).get("private") is False else "both"
+
+def seed_wait(ci):
+    """Short words for the row while a torrent still seeds: when it can go. '' when it can go now or nothing seeds it."""
+    if not ci or ci.get("client") == "NZBGet" or seeding_done(ci): return ""
+    if not ci.get("finished"): return "Still downloading"
+    days_left = max(0.0, SEED_MIN_DAYS - (ci.get("seeding_days") or 0)); ratio_left = (ci.get("ratio") or 0) < SEED_MIN_RATIO
+    d_txt = "tomorrow" if days_left <= 1 else f"in about {round(days_left)} days"
+    if rule_for(ci) == "either": return f"Still seeding · can go {d_txt}" + (f", or sooner at ratio {SEED_MIN_RATIO:g}" if ratio_left else "")
+    if days_left <= 0: return f"Still seeding (private) · can go once ratio reaches {SEED_MIN_RATIO:g}"
+    return f"Still seeding{' (private)' if ci.get('private') else ''} · can go {d_txt}" + (f" if ratio has reached {SEED_MIN_RATIO:g}" if ratio_left else "")
 
 def client_text(ci):
     if ci is None: return "not in any download client"
@@ -549,7 +567,8 @@ def seed_sentence(ci):
     if ci is None: return "Nothing holds it, so it can go now."
     if ci.get("client") == "NZBGet": return "It came from usenet, so there is no seeding to wait for; it can go now."
     if seeding_done(ci): return f"{ci['client']} has seeded it to ratio {ci['ratio']:.1f} over {ci['seeding_days']:.0f} days, past your rule, so it can go now."
-    return f"{ci['client']} is still seeding it (ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days); your rule keeps it until ratio {SEED_MIN_RATIO:g} {'or' if SEED_RULE == 'either' else 'and'} {SEED_MIN_DAYS:g} days."
+    kind = "" if SEED_RULE in ("both", "either") else (" (a private torrent)" if ci.get("private") else " (a public torrent)" if ci.get("private") is False else " (the client does not say whether it is private, so the safe rule)")
+    return f"{ci['client']} is still seeding it (ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days); your rule{kind} keeps it until ratio {SEED_MIN_RATIO:g} {'or' if rule_for(ci) == 'either' else 'and'} {SEED_MIN_DAYS:g} days."
 def sentence(v):
     code, size, twin = v["code"], human(v["size"]), v.get("twin")
     t = friendly_title(twin) if twin else ""
@@ -713,6 +732,7 @@ def state(c):
         v["category"] = v.get("category") if v.get("category") in CAT_LABEL else "other"; v["category_label"] = CAT_LABEL[v["category"]]
         v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
         v["fix_kind"] = FIXABLE.get(v["code"]) if v["fixable"] else ""
+        v["wait"] = seed_wait(v.get("client") if isinstance(v.get("client"), dict) else None) if v["needs_you"] and not v["fixable"] and v["code"] in FIXABLE else ""   # why there is no button yet
         items.append(v)
     counts, bytes_by = {}, {}
     cats = {k: {"key": k, "label": lab, "files": 0, "needs": 0, "wasted": 0} for k, lab in CATEGORIES}

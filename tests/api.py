@@ -30,6 +30,7 @@ for _ in range(100):
     time.sleep(0.1); st, j = get("/api/state")
     if j["last_run"] and not j["scanning"]["on"]: break
 check("scan finished and the state carries items", j["last_run"] and j["last_run"]["files"] == _JUDGED and len(j["items"]) == _JUDGED, (j["last_run"], len(j["items"])))
+check("the fixtures carry at least one row that waits for seeding, with its reason", any(i.get("wait") for i in j["items"]))
 check("the fixtures carry client states and at least one 'can go now'", any(i["client_text"] for i in j["items"]) and any(i["removable"] and i["needs_you"] for i in j["items"]))
 item = next(i for i in j["items"] if i["code"] == "DUPLICATE_COPY")
 need = {"path", "code", "label", "title", "plain", "evidence", "size", "wasted", "size_h", "wasted_h", "twin", "twin_title", "needs_you", "ignored", "kind", "client_text", "removable"}

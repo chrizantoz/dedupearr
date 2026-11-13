@@ -21,7 +21,7 @@ def world_for(P, DATA):
     rel = lambda p: os.path.relpath(p, os.path.dirname(os.path.dirname(p)))
     return {"deluge": [
         {"id": "dup1", "name": "Dune.Part.Two.2024.2160p.WEB-DL", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["dup_dl"])], "state": "Seeding", "ratio": 2.5, "seeding_time": 30 * 86400, "label": "movies"},
-        {"id": "hdr1", "name": "Frieren.S01E01.1080p.BluRay", "save_path": f"{DATA}/torrents/anime", "files": [os.path.basename(P["hdr_dl"])], "state": "Seeding", "ratio": 0.02, "seeding_time": 2 * 86400, "label": "cleanuparr-unlinked"},
+        {"id": "hdr1", "name": "Frieren.S01E01.1080p.BluRay", "save_path": f"{DATA}/torrents/anime", "files": [os.path.basename(P["hdr_dl"])], "state": "Seeding", "ratio": 0.02, "seeding_time": 2 * 86400, "label": "cleanuparr-unlinked", "private": True},
         {"id": "scary", "name": "Scary.Movie.2026.1080p.BluRay.x264-EniaHD", "save_path": f"{DATA}/torrents/movies", "files": [os.path.basename(P["other_dl"])], "state": "Seeding", "ratio": 1.31, "seeding_time": 3 * 86400, "label": "movies"},
         {"id": "soft", "name": "Some.App.2026", "save_path": f"{DATA}/torrents/software", "files": [rel(P["soft"])], "state": "Seeding", "ratio": 0.4, "seeding_time": 2 * 86400, "label": ""}],
         "nzbget": [{"id": 7, "name": "Show.S01E01.1080p.WEB", "dir": os.path.dirname(P["usenet"]), "label": "tv"},
@@ -105,7 +105,7 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                 elif m == "web.connect": world["_deluge_connected"] = True; res = ["core.add_torrent_file"]
                 elif m == "core.get_torrents_status":
                     res = {t["id"]: {"name": t["name"], "save_path": t["save_path"], "state": t["state"], "ratio": t["ratio"], "seeding_time": t["seeding_time"], "time_added": 1783706283, "label": t.get("label", ""), "total_size": 1,
-                                     "is_finished": t.get("finished", True), "progress": 100.0 if t.get("finished", True) else 50.0, "files": [{"index": i, "path": f, "size": 1, "offset": 0} for i, f in enumerate(t["files"])]} for t in world.get("deluge", [])}
+                                     "is_finished": t.get("finished", True), "private": t.get("private", False), "progress": 100.0 if t.get("finished", True) else 50.0, "files": [{"index": i, "path": f, "size": 1, "offset": 0} for i, f in enumerate(t["files"])]} for t in world.get("deluge", [])}
                 elif m == "core.remove_torrent": world.setdefault("_removed", []).append((p[0], p[1])); world["deluge"] = [t for t in world["deluge"] if t["id"] != p[0]]; res = True
                 else: return self._send({"result": None, "error": {"message": f"unknown method {m}", "code": 2}, "id": r.get("id")})
                 return self._send({"result": res, "error": None, "id": r.get("id")})

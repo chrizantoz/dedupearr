@@ -58,6 +58,25 @@ d.CLIENT_STATUS.clear(); S_r = d.state(c)
 check("after a restart the lead still says how much can go right now", "can go right now" in S_r["lead"] and S_r["clients"], S_r["lead"][-120:])
 d.CLIENT_STATUS.clear(); d.kv_set(c, "client_status", ""); S_u = d.state(c)   # upgraded from a build that never saved the status: rows with client knowledge are enough
 check("after an upgrade without a saved status the lead still says how much can go right now", "can go right now" in S_u["lead"], S_u["lead"][-120:])
+# 2026-11-13 (owner: "some are private but most are public"): the rule follows each torrent's private flag, and a row without a button says when it can go
+ci_h = by[P["hdr_dl"]].get("client") or {}; ci_d = by[P["dup_dl"]].get("client") or {}
+check("the Deluge reader carries each torrent's private flag", ci_h.get("private") is True and ci_d.get("private") is False, (ci_h.get("private"), ci_d.get("private")))
+old_rule = d.SEED_RULE
+try:
+    d.SEED_RULE = "auto"
+    pub = dict(client="Deluge", finished=True, ratio=0.02, seeding_days=15, private=False); prv = dict(pub, private=True); unk = dict(pub, private=None)
+    check("auto: a public torrent past 14 days can go even at a low ratio", d.seeding_done(pub) and d.seed_wait(pub) == "")
+    check("auto: a private torrent past 14 days still waits for ratio 1, and the row says so", not d.seeding_done(prv) and d.seed_wait(prv) == "Still seeding (private) · can go once ratio reaches 1", d.seed_wait(prv))
+    check("auto: a client that does not say is treated as private (the safe side)", not d.seeding_done(unk) and "does not say" in d.seed_sentence(unk), d.seed_sentence(unk))
+    young = dict(pub, seeding_days=10.2)
+    check("auto: a young public torrent says when it can go", d.seed_wait(young) == "Still seeding · can go in about 4 days, or sooner at ratio 1", d.seed_wait(young))
+    check("auto: the sentence says public and the rule it used", "a public torrent" in d.seed_sentence(young) and "ratio 1 or 14 days" in d.seed_sentence(young), d.seed_sentence(young))
+    d.SEED_RULE = "both"
+    check("SEED_RULE=both still holds every torrent to ratio and days", not d.seeding_done(pub) and d.rule_for(pub) == "both")
+    d.SEED_RULE = "either"
+    check("SEED_RULE=either lets a private one go on days alone", d.seeding_done(prv))
+finally: d.SEED_RULE = old_rule
+check("a waiting row carries why there is no button; a row with a button carries none", by[P["hdr_dl"]]["wait"].startswith("Still seeding") and not by[P["hdr_dl"]]["fixable"] and all(not i["wait"] for i in S["items"] if i["fixable"]), by[P["hdr_dl"]].get("wait"))
 # a client that stops answering: the scan still completes and About says so
 srv.shutdown(); srv.server_close(); d.CLIENT_STATUS.clear()
 r2 = d.scan(now=now + 60); S2 = d.state(c); a2 = d.about(c)
