@@ -23,6 +23,7 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("remove fix deletes the torrent's files", '"core.remove_torrent", [ci["id"], False]', '"core.remove_torrent", [ci["id"], True]'),
     ("remove fix trusts last night's scan", 'if not seeding_done(cur): return 409', 'if False: return 409'),
     ("remove fix ignores the torrent's other files", 'if others: return 409', 'if False: return 409'),
+    ("remove fix rides along with 'Move all'", 'not (kind == "remove" and ci and ci.get("client") in REMOVE_READERS)', 'True'),
     ("remove fix leaves the file in the bin when the client refuses", 'back, _ = restore_held(c, obj["held_id"])', 'back = 0'),
     ("failed usenet job called seeding only", 'elif ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in', 'elif False and ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in'),
 ]

@@ -757,6 +757,32 @@ def ui_fix(c, path):
     return 200, {"ok": True, "dry_run": True, "kind": kind, "steps": steps, "frees": frees, "frees_h": human(frees),
                  "note": f"Dry run: nothing was changed. This fix would free {human(frees)} in {len(steps)} steps." + (" This kind of fix is not switched on yet; it arrives after its own safety checks." if later else "")}
 
+BULK_MAX = 500
+def in_bulk(kind, ci):
+    """May this fix run from 'Move all shown'? Only a plain move that Put back undoes in full: removing a torrent cannot be undone, so that stays one press per row."""
+    return FIX_MODE == "on" and kind in LIVE_KINDS and not (kind == "remove" and ci and ci.get("client") in REMOVE_READERS)
+def ui_fix_all(c, paths):
+    """POST /api/fix_all: move every listed file to the holding bin, one after the other, each through the same checks as its own button.
+    A file that is refused is left alone and named; the rest still go. Returns (code, obj)."""
+    if FIX_MODE != "on": return 403, {"error": "moving many files at once only works when fixes are switched on"}
+    if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so a fix never races the scan"}
+    if len(paths) > BULK_MAX: return 400, {"error": f"that is more than {BULK_MAX} files at once; narrow the list with a filter or the search box"}
+    ignored = {r["path"] for r in c.execute("SELECT path FROM ignored")}; done = freed = 0; skipped = []
+    for path in dict.fromkeys(paths):
+        r = c.execute("SELECT * FROM verdict WHERE path=?", (path,)).fetchone()
+        if not r: skipped.append({"path": path, "error": "that file is not in the last scan"}); continue
+        ci = json.loads(r["client"]) if r["client"] else None
+        if path in ignored: skipped.append({"path": path, "error": "you chose to ignore this file"}); continue
+        if not in_bulk(FIXABLE.get(r["code"]), ci): skipped.append({"path": path, "error": "this one is not a plain move to the holding bin; use the button on its own row"}); continue
+        try: code, obj = ui_fix(c, path)
+        except Exception as e: note_error(f"fix failed for {path}: {e!r}"); code, obj = 500, {"error": f"stopped with an error: {e}"}
+        if code == 200 and not obj.get("dry_run"): done += 1; freed += obj.get("frees", 0)
+        else: skipped.append({"path": path, "error": obj.get("error", "nothing was changed")})
+    for k in skipped: k["title"] = friendly_title(k["path"])
+    note = (f"Moved {done} file{'s' if done != 1 else ''} to the holding bin. {human(freed)} comes back after {HOLD_DAYS} days; Put back (Actions tab) undoes each one until then." if done else "Nothing was moved.")
+    if skipped: note += f" {len(skipped)} {'was' if len(skipped) == 1 else 'were'} left alone: {skipped[0]['error']}" + (" (and other reasons; see the Actions tab)" if len({k['error'] for k in skipped}) > 1 else "")
+    return 200, {"ok": True, "dry_run": False, "done": done, "frees": freed, "frees_h": human(freed), "skipped": skipped, "note": note}
+
 def actions(c, limit=100):
     return [dict(r) | {"when": datetime.datetime.fromtimestamp(r["ts"]).isoformat(timespec="minutes")} for r in c.execute("SELECT * FROM action ORDER BY ts DESC LIMIT ?", (limit,))]
 
@@ -774,6 +800,7 @@ def state(c):
         v["category"] = v.get("category") if v.get("category") in CAT_LABEL else "other"; v["category_label"] = CAT_LABEL[v["category"]]
         v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
         v["fix_kind"] = FIXABLE.get(v["code"]) if v["fixable"] else ""
+        v["bulk"] = bool(v["fixable"] and in_bulk(v["fix_kind"], ci))   # may go with 'Move all shown'
         v["wait"] = seed_wait(v.get("client") if isinstance(v.get("client"), dict) else None) if v["needs_you"] and not v["fixable"] and v["code"] in FIXABLE else ""   # why there is no button yet
         items.append(v)
     counts, bytes_by = {}, {}
@@ -1025,6 +1052,15 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception as e: note_error(f"fix failed for {path}: {e!r}"); return self._json(500, {"error": f"the fix stopped with an error and is written on the About tab: {e}"})   # 2026-11-14: a press answered 'Failed to fetch' and nothing said why
                 finally: c.close()
                 if not obj.get("dry_run"): log(f"fix {obj.get('kind', '')} -> {code} for {path}")
+                return self._json(code, obj)
+            if p == "/api/fix_all":
+                paths = body.get("paths")
+                if not isinstance(paths, list) or not paths or not all(isinstance(x, str) and x for x in paths): return self._json(400, {"error": "which files?"})
+                c = db()
+                try: code, obj = ui_fix_all(c, paths)
+                except Exception as e: note_error(f"move all failed: {e!r}"); return self._json(500, {"error": f"the move stopped with an error and is written on the About tab: {e}"})
+                finally: c.close()
+                if code == 200: log(f"fix all -> {obj['done']} moved, {len(obj['skipped'])} left alone")
                 return self._json(code, obj)
             if p == "/api/restore":
                 try: hid = int(body.get("id"))

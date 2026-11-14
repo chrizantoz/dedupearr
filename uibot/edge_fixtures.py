@@ -64,5 +64,7 @@ s["holding"] = {"days": 14, "dir": "/data/.dedupearr-holding", "bytes": 3 * 10**
     {"id": 8, "orig": "/data/usenet/movies/Some Film (2001).mkv", "title": "Some Film (2001)", "size": 10**9, "size_h": "1 GB", "kind": "bin", "why": "ORPHAN: Move the file into the holding bin.", "when": "2026-11-11T03:30", "days_left": 12.5, "note": ""}]}
 if not any(i.get("fixable") and i.get("fix_kind") == "bin" for i in s["items"]): raise SystemExit("live world: the base fixtures have no orphan to move")
 if not any(i.get("fixable") and i.get("fix_kind") == "remove" and (i.get("client") or {}).get("client") == "Deluge" for i in s["items"]): raise SystemExit("live world: the base fixtures have no torrent to remove")
+for i in s["items"]: i["bulk"] = bool(i.get("fixable") and i.get("fix_kind") in s["live_kinds"] and not (i.get("fix_kind") == "remove" and (i.get("client") or {}).get("client") in ("Deluge", "qBittorrent")))   # the same rule as in_bulk() in the app
+if sum(1 for i in s["items"] if i["bulk"] and i.get("needs_you")) < 2: raise SystemExit("live world: the base fixtures have fewer than two plain moves for 'Move all shown'")
 write("live", e)
 print("edge fixtures written: tidy, empty, huge, down, errors, live")

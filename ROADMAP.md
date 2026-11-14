@@ -71,7 +71,7 @@ Why this phase matters on the owner's server (2026-11-12): 357 GB of header-diff
 - 🟢 **P3.2** (2026-11-14, #7) Remove a leftover or second copy through the client, once its seeding is done. The client is asked again right before the change (last night's scan is not trusted); the file goes to the holding bin first; then Deluge or qBittorrent is told to forget the torrent and keep its files; if the client refuses, the file goes straight back. A torrent that holds other large files is left alone. Usenet leftovers and files no client knows go to the holding bin with no client call. Gate: `tests/fixes.py` (43 checks), four `remove fix` mutants, page-bot world `live`.
 - 🔴 **P3.3** Relink (move the copy to the holding bin, hardlink the library file at the torrent path, verify link count and seeding, roll back on failure).
 - 🟡 **P3.4** Orphans to the holding bin (done with P3.1); empty old recycle-bin files (to do).
-- 🔴 **P3.5** "Fix all with this cause", including a whole multi-file torrent at once; per-file lock marker shared with Auditarr so the two never fix one file at once; night runs an hour apart.
+- 🟡 **P3.5** "Move all shown to the holding bin" for plain moves (done 2026-11-14; torrent removals stay one press each). Still to do: "Fix all with this cause", including a whole multi-file torrent at once; per-file lock marker shared with Auditarr so the two never fix one file at once; night runs an hour apart.
 - 🔴 **P3.6** Gate to phase 4: 30 nightly runs with zero wrong fixes.
 
 ## Phase 4 · Easy to install

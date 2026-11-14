@@ -100,5 +100,22 @@ for key, who in (("unmatched", "no client"), ("usenet", "NZBGet")):
     rw = row(P[key]); code, obj = d.ui_fix(c, P[key]) if rw and rw["fix_kind"] == "remove" else (0, rw)
     check(f"remove: a leftover with {who} goes to the holding bin and no client is told anything", code == 200 and not os.path.exists(P[key]) and len(world["_removed"]) == n_rm and "_nz_edits" not in world, (code, obj))
 d.client_remove({"client": "qBittorrent", "id": "abc123", "name": "x"}); check("remove: qBittorrent is told to keep the files too", world["_removed"][-1] == ("abc123", "false"), world["_removed"][-1])
+# ---- 'Move all shown' (2026-11-14): many plain moves in one press, each through the same checks; a torrent removal never rides along
+hid = next(h["id"] for h in d.holding(c)["items"] if h["orig"] == scary); d.restore_held(c, hid); world["deluge"].append(dict(T0))
+B = [os.path.join(DATA, "torrents", "tv", f"Nobody.Knows.bulk{k}.mkv") for k in (1, 2, 3, 4)]
+for k, b in enumerate(B): fake_disk.blob(b, 2, f"unique-bulk{k}")
+d.scan(now=now); c.execute("INSERT INTO ignored(path, at) VALUES(?, ?)", (B[3], now)); c.commit()
+check("move all: plain moves are marked for it, a torrent removal is not", all(row(b)["bulk"] for b in B[:3]) and row(scary)["fixable"] and not row(scary)["bulk"] and not row(B[3])["bulk"], [row(b)["bulk"] for b in B] + [row(scary)["bulk"]])
+with open(B[2], "ab") as fh: fh.write(b"grown since the scan")
+n_rm = len(world["_removed"]); ask = B + [scary, "/data/never-scanned.mkv", B[0]]
+d.FIX_MODE = "dryrun"; code, obj = d.ui_fix_all(c, ask); check("move all: refused while fixes are a dry run, nothing moves", code == 403 and all(os.path.exists(b) for b in B), (code, obj)); d.FIX_MODE = "on"
+d.SCANNING["on"] = True; code, obj = d.ui_fix_all(c, ask); d.SCANNING["on"] = False; check("move all: refused during a scan", code == 409 and os.path.exists(B[0]), (code, obj))
+code, obj = d.ui_fix_all(c, ["/data/x.mkv"] * 0 + [f"/data/{i}.mkv" for i in range(d.BULK_MAX + 1)]); check("move all: a list that is too long is refused whole", code == 400 and "narrow" in obj["error"], (code, obj))
+code, obj = d.ui_fix_all(c, ask); why = {k["path"]: k["error"] for k in obj.get("skipped", [])}
+check("move all: the plain moves go to the holding bin and the answer counts them", code == 200 and obj["done"] == 2 and not os.path.exists(B[0]) and not os.path.exists(B[1]) and sum(1 for h in d.holding(c)["items"] if h["orig"] in B) == 2, (code, obj))
+check("move all: a file that changed is left alone and named, the rest still went", os.path.exists(B[2]) and "changed since" in why.get(B[2], ""), why)
+check("move all: a row that removes a torrent is left alone and no client is told anything", os.path.exists(scary) and "own row" in why.get(scary, "") and len(world["_removed"]) == n_rm, why)
+check("move all: an ignored file and a file the scan never saw are left alone", os.path.exists(B[3]) and "ignore" in why.get(B[3], "") and "not in the last scan" in why.get("/data/never-scanned.mkv", ""), why)
+check("move all: the note says how many moved and how many were left, in words", "Moved 2 files" in obj["note"] and "4 were left alone" in obj["note"], obj["note"])
 d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)

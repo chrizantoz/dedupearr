@@ -110,6 +110,15 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   const rmBtns = $$("#rows button[data-live='1']").filter(b => /Remove torrent/.test(b.textContent));
   check("a live fix that removes a torrent says so on the button and in its hint (files kept, Put back returns the file only)", rmBtns.length === rmRows.length && rmBtns.every(b => rmRows.includes(b.dataset.fix) && /files are kept/.test(b.title) && /not the torrent/.test(b.title)), `${rmBtns.length} vs ${rmRows.length}`);
   if (rmBtns.length) { const rb = rmBtns[0]; rb.click(); await sleep(30); check("the first press on a torrent removal asks to be sure in its own words", /remove and move/.test(rb.textContent) && rb.dataset.armed === "1", rb.textContent); delete rb.dataset.armed; rb.textContent = rb.dataset.was; }
+  const bulkRows = items.filter(i => i.needs_you).slice(0, 500).filter(i => i.bulk && i.fixable && mode === "on" && live.has(i.fix_kind)).map(i => i.path);
+  check("'Move all shown' appears only when two or more plain moves are on the page, and counts them", $("#bulk").hidden === (bulkRows.length < 2) && (bulkRows.length < 2 || ($("#bulk-go").textContent.includes(`Move all ${bulkRows.length} shown`) && +$("#bulk-go").dataset.n === bulkRows.length)), `${$("#bulk").hidden} ${$("#bulk-go").textContent} vs ${bulkRows.length}`);
+  if (bulkRows.length >= 2) {
+    const bb = $("#bulk-go"); const m0 = posts.filter(p => p.url.includes("api/fix_all")).length; bb.click(); await sleep(30);
+    check("the first press of 'Move all' only asks to be sure, nothing is posted", posts.filter(p => p.url.includes("api/fix_all")).length === m0 && /Sure\? Press again to move all/.test(bb.textContent), bb.textContent);
+    bb.click(); await sleep(120); const sent = posts.filter(p => p.url.includes("api/fix_all")).pop();
+    check("the second press posts exactly the plain moves, never a torrent removal", !!sent && JSON.stringify(JSON.parse(sent.body).paths.slice().sort()) === JSON.stringify(bulkRows.slice().sort()) && !rmRows.some(p => JSON.parse(sent.body).paths.includes(p)), sent && sent.body.slice(0, 200));
+    if (rmRows.length) check("the hint says torrent removals stay one press each", /one press each/.test($("#bulk-hint").textContent), $("#bulk-hint").textContent);
+  }
   if (liveRows) {
     const lb = $("#rows button[data-live='1']"); const n0 = posts.filter(p => p.url.includes("api/fix")).length; lb.click(); await sleep(30);
     check("the first press of a real move only asks to be sure, nothing is posted", posts.filter(p => p.url.includes("api/fix")).length === n0 && /Sure/.test(lb.textContent) && lb.dataset.armed === "1", lb.textContent);

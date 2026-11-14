@@ -69,5 +69,7 @@ try: r9 = post("/api/fix", {"path": "/data/x.mkv"})
 finally: d.ui_fix = _real
 check("a fix that stops with an error answers 500 in words and is kept for the About tab", r9[0] == 500 and "disk said no" in str(r9[1]) and any("disk said no" in e["text"] for e in d.ERRORS), r9)
 _ui = open(os.path.join(ROOT, "ui.html")).read()
+r10 = post("/api/fix_all", {"paths": "nope"}); check("'Move all' needs a list of files, and says so", r10[0] == 400 and "which files" in str(r10[1]), r10)
+r11 = post("/api/fix_all", {"paths": ["/data/x.mkv"]}); check("'Move all' is refused in words while fixes are a dry run", r11[0] == 403 and "switched on" in str(r11[1]), r11)
 check("after a done fix, a page refresh that fails is not shown as a failed fix", "The page could not refresh itself just now" in _ui)
 srv.shutdown(); _mock.shutdown(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)
