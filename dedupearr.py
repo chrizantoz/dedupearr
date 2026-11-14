@@ -622,7 +622,7 @@ def plan_fix(v):
     elif kind == "remove": steps = ([f"Ask {ci['client']} once more whether the torrent '{ci['name']}' is still past your seeding rule, then remove it there without deleting its files." if ci and ci.get("client") != "NZBGet" else ("It came from usenet and nothing seeds it; NZBGet's history is left as it is." if ci else "No client holds this file, so there is nothing to tell a client.")]
                                     + [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."])
     elif kind == "bin": steps = [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."]
-    else: steps = [f"The file has sat in its recycle bin longer than your {RECYCLE_DAYS}-day rule.", "Delete it for good (it was already thrown away once; there is no second bin)."]
+    else: steps = [f"The file has sat in its recycle bin longer than your {RECYCLE_DAYS}-day rule.", f"Move it into the holding bin at {hold} (nothing is deleted yet).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."]   # P3.4: no fix deletes directly, not even from a recycle bin
     return kind, steps, v.get("wasted") or 0
 
 def record_action(c, mode, kind, path, detail, result, undo=None):
@@ -807,7 +807,7 @@ def relink_job(v, steps):
     finally:
         c.close(); log(f"fix relink -> {code} for {path}")
         FIXING.update(path=None, last={"path": path, "ok": code == 200, "note": obj.get("note") or obj.get("error", ""), "at": time.time()})
-LIVE_KINDS = {"bin", "remove", "relink"}   # P3.3 (2026-11-14): relink an identical copy. P3.1: orphans to the holding bin. P3.2 (2026-11-14): remove a leftover or second copy through the client. Relink and emptying the recycle bin stay dry runs until their gates pass
+LIVE_KINDS = {"bin", "remove", "relink", "empty"}   # P3.4 (2026-11-14): old recycle-bin files go to the holding bin like everything else. P3.3 (2026-11-14): relink an identical copy. P3.1: orphans to the holding bin. P3.2 (2026-11-14): remove a leftover or second copy through the client. Relink and emptying the recycle bin stay dry runs until their gates pass
 def ui_fix(c, path, background=False):
     """POST /api/fix: show the plan (dry run) or carry it out (on). Phase 3 ships the 'on' branch fix by fix; until then every call is a dry run."""
     if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so a fix never races the scan"}

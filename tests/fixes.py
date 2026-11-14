@@ -149,5 +149,12 @@ while d.FIXING["path"] and time.time() - t0 < 20: time.sleep(0.05)
 last = d.FIXING["last"] or {}
 check("relink: from the page it runs beside the page and leaves its result for the row", code == 202 and obj.get("started") and last.get("ok") and last.get("path") == dl and d.FIXING["done"] == d.FIXING["total"] > 0 and os.lstat(dl).st_ino == ino_lib, (d.FIXING, code))
 check("relink: the page state carries the progress and the last result", d.state(c)["fixing"]["last"]["path"] == dl and "relink" in d.state(c)["live_kinds"])
+# ---- P3.4 (2026-11-14): an old recycle-bin file goes to the holding bin like everything else; no fix deletes directly
+d.scan(now=now); bo = row(P["bin_old"]); bn = row(P["bin_new"]); ino_b = os.lstat(P["bin_old"]).st_ino
+check("old bin: an old recycle-bin file can be moved and rides along with 'Move all'; a recent one has no fix", bo and bo["fix_kind"] == "empty" and bo["fixable"] and bo["bulk"] and not bn["fixable"], (bo, bn))
+code, obj = d.ui_fix(c, P["bin_new"]); check("old bin: a file still inside your recycle rule is refused", code == 400 and os.path.exists(P["bin_new"]), (code, obj))
+code, obj = d.ui_fix(c, P["bin_old"]); check("old bin: the file moves to the holding bin, same file, nothing deleted", code == 200 and not obj["dry_run"] and not os.path.exists(P["bin_old"]) and os.lstat(obj["dest"]).st_ino == ino_b and not any("for good" in s_ for s_ in obj["steps"]), (code, obj))
+hid = next(h["id"] for h in d.holding(c)["items"] if h["orig"] == P["bin_old"]); code, obj = d.restore_held(c, hid)
+check("old bin: Put back returns it to its recycle bin", code == 200 and os.lstat(P["bin_old"]).st_ino == ino_b, (code, obj))
 d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)
