@@ -83,10 +83,9 @@ def http_json(url, data=None, headers=None, cj=None, timeout=None, form=False):
     with opener.open(req, timeout=timeout) as r: raw = r.read().decode("utf-8", "replace")
     return json.loads(raw) if raw.strip() else {}
 
-def read_deluge():
-    cfg = CLIENTS["Deluge"]
-    if not cfg["url"]: return {}
-    cj = http.cookiejar.CookieJar(); u = cfg["url"] + "/json"; n = [0]
+def deluge_session():
+    """A signed-in call(method, params) for Deluge's web JSON."""
+    cfg = CLIENTS["Deluge"]; cj = http.cookiejar.CookieJar(); u = cfg["url"] + "/json"; n = [0]
     def call(m, params):
         n[0] += 1; r = http_json(u, {"method": m, "params": params, "id": n[0]}, cj=cj)
         if r.get("error"): raise RuntimeError(f"{m}: {r['error'].get('message') if isinstance(r['error'], dict) else r['error']}")
@@ -95,6 +94,10 @@ def read_deluge():
     if not call("web.connected", []):
         hosts = call("web.get_hosts", []) or []
         if hosts: call("web.connect", [hosts[0][0]])
+    return call
+def read_deluge():
+    if not CLIENTS["Deluge"]["url"]: return {}
+    call = deluge_session()
     fields = ["name", "save_path", "state", "ratio", "seeding_time", "time_added", "label", "total_size", "is_finished", "progress", "files", "private"]
     ts = call("core.get_torrents_status", [{}, fields]) or {}
     out = {}
@@ -121,12 +124,16 @@ def read_nzbget():
         if d: out[d.rstrip("/") + "/"] = {"client": "NZBGet", "name": g.get("NZBName", ""), "state": "downloading", "ratio": 0.0, "seeding_days": 0.0, "label": g.get("Category") or "", "finished": False, "id": g.get("NZBID")}
     CLIENT_STATUS["NZBGet"] = {"ok": True, "n": len(hist), "note": f"{len(hist)} in history, {len(groups)} downloading"}; return out
 
+def qbit_session():
+    """(base url, cookie jar) of a signed-in qBittorrent session."""
+    cfg = CLIENTS["qBittorrent"]; cj = http.cookiejar.CookieJar(); base = cfg["url"] + "/api/v2"
+    req = urllib.request.Request(base + "/auth/login", data=urllib.parse.urlencode({"username": cfg["user"], "password": cfg["password"]}).encode(), headers={"Referer": cfg["url"]})
+    if "Ok" not in urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj)).open(req, timeout=30).read().decode(): raise RuntimeError("the login was refused")
+    return base, cj
 def read_qbit():
     cfg = CLIENTS["qBittorrent"]
     if not cfg["url"]: return {}
-    cj = http.cookiejar.CookieJar(); base = cfg["url"] + "/api/v2"
-    req = urllib.request.Request(base + "/auth/login", data=urllib.parse.urlencode({"username": cfg["user"], "password": cfg["password"]}).encode(), headers={"Referer": cfg["url"]})
-    if "Ok" not in urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj)).open(req, timeout=30).read().decode(): raise RuntimeError("the login was refused")
+    base, cj = qbit_session()
     out = {}; ts = http_json(base + "/torrents/info", cj=cj) or []
     for t in ts:
         for f in http_json(base + "/torrents/files?hash=" + t["hash"], cj=cj) or []:
@@ -609,7 +616,7 @@ def plan_fix(v):
     hold = f"{HOLDING_DIR}/{os.path.basename(v['path'])}"
     if kind == "relink": steps = ["Check both checksums again right before the change.", f"Move this copy into the holding bin at {hold} (nothing is deleted).", f"Create a hardlink from the library file {friendly_title(v['twin'] or '')} at this download's name, so the client keeps seeding the same bytes.",
                                  "Confirm the link count is now 2 and the client still sees the file; if anything fails, put the copy back.", f"Keep the moved copy for {HOLD_DAYS} days, then delete it, unless you press Undo."]
-    elif kind == "remove": steps = ([f"Ask {ci['client']} to remove the torrent '{ci['name']}' without deleting its files." if ci and ci.get("client") != "NZBGet" else ("Remove the entry from NZBGet's history." if ci else "No client holds this file, so there is nothing to tell a client.")]
+    elif kind == "remove": steps = ([f"Ask {ci['client']} once more whether the torrent '{ci['name']}' is still past your seeding rule, then remove it there without deleting its files." if ci and ci.get("client") != "NZBGet" else ("It came from usenet and nothing seeds it; NZBGet's history is left as it is." if ci else "No client holds this file, so there is nothing to tell a client.")]
                                     + [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."])
     elif kind == "bin": steps = [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."]
     else: steps = [f"The file has sat in its recycle bin longer than your {RECYCLE_DAYS}-day rule.", "Delete it for good (it was already thrown away once; there is no second bin)."]
@@ -696,7 +703,42 @@ def holding(c, now=None):
                     "when": datetime.datetime.fromtimestamp(r["at"]).isoformat(timespec="minutes"), "days_left": round(left, 1), "note": r["note"] or ""})
     return {"items": out, "bytes": sum(i["size"] for i in out), "bytes_h": human(sum(i["size"] for i in out)), "days": HOLD_DAYS, "dir": HOLDING_DIR}
 
-LIVE_KINDS = {"bin"}   # P3.1 switches on the one fix that needs nothing but the holding bin; relink (P3.2) and remove/empty (P3.3) stay dry runs until their gates pass
+REMOVE_READERS = {"Deluge": lambda: read_deluge(), "qBittorrent": lambda: read_qbit()}
+def client_remove(ci):
+    """Tell the client to forget one torrent and keep its files (the file itself is already in the holding bin)."""
+    if ci["client"] == "Deluge":
+        if deluge_session()("core.remove_torrent", [ci["id"], False]) is False: raise RuntimeError("Deluge refused to remove the torrent")
+    elif ci["client"] == "qBittorrent":
+        base, cj = qbit_session(); http_json(base + "/torrents/delete", {"hashes": ci["id"], "deleteFiles": "false"}, cj=cj, form=True)
+    else: raise RuntimeError(f"no remove call for {ci['client']}")
+def remove_fix(c, v, steps, now=None):
+    """P3.2: a leftover or second copy whose seeding is done. The file goes to the holding bin first; then the client is told to forget the
+    torrent (never its files); if the client refuses, the file goes straight back. Returns (code, obj)."""
+    path = v["path"]; ci = json.loads(v["client"]) if isinstance(v.get("client"), str) and v["client"] else (v.get("client") or None)
+    why = f"{v['code']}: " + " | ".join(steps); torrent = None
+    if ci and ci.get("client") in REMOVE_READERS:
+        try: fresh = REMOVE_READERS[ci["client"]]()
+        except Exception as e: return 502, {"error": f"{ci['client']} did not answer just now ({e}), so nothing was changed; try again in a minute"}
+        mine = {p: i for p, i in fresh.items() if i.get("id") == ci.get("id") and i.get("client") == ci["client"]}
+        if mine:   # the torrent is still there: judge it on what the client says now, not on last night's scan
+            cur = mine.get(path) or next(iter(mine.values()))
+            if not seeding_done(cur): return 409, {"error": "the client says this torrent is not past your seeding rule any more, so nothing was changed. " + seed_sentence(cur)}
+            others = [p for p in mine if p != path and os.path.exists(p) and os.path.getsize(p) >= MIN_SIZE_MB * 1024 * 1024]
+            if others: return 409, {"error": f"this torrent holds {len(others)} other large file(s); removing it would stop seeding those too, so nothing was changed. Fixing a whole torrent at once arrives with 'Fix all with this cause'."}
+            torrent = cur
+    code, obj = hold_file(c, path, "remove", why, now)
+    if code != 200: return code, obj
+    if torrent:
+        try: client_remove(torrent)
+        except Exception as e:
+            back, _ = restore_held(c, obj["held_id"])
+            record_action(c, "on", "remove", path, why, f"{torrent['client']} would not remove the torrent ({e}); the file was put back" if back == 200 else f"{torrent['client']} would not remove the torrent ({e}); the file waits in the holding bin, Put back returns it")
+            return 502, {"error": f"{torrent['client']} would not remove the torrent ({e}). " + ("The file is back in its place; nothing was changed." if back == 200 else "The file waits in the holding bin; Put back (Actions tab) returns it.")}
+        c.execute("UPDATE held SET note=? WHERE id=?", (f"its torrent '{torrent['name']}' was removed from {torrent['client']}; Put back returns the file, not the torrent", obj["held_id"])); c.commit()
+        record_action(c, "on", "remove", path, f"removed the torrent '{torrent['name']}' from {torrent['client']} (files kept)", "done; the file waits in the holding bin")
+        obj["note"] = f"Removed the torrent from {torrent['client']} and moved the file to the holding bin. {obj['frees_h']} comes back after {HOLD_DAYS} days; Put back (Actions tab) returns the file until then, not the torrent."
+    return 200, obj
+LIVE_KINDS = {"bin", "remove"}   # P3.1: orphans to the holding bin. P3.2 (2026-11-14): remove a leftover or second copy through the client. Relink and emptying the recycle bin stay dry runs until their gates pass
 def ui_fix(c, path):
     """POST /api/fix: show the plan (dry run) or carry it out (on). Phase 3 ships the 'on' branch fix by fix; until then every call is a dry run."""
     if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so a fix never races the scan"}
@@ -707,7 +749,7 @@ def ui_fix(c, path):
     if not kind: return 400, {"error": steps[0]}
     if FIX_MODE == "off": return 403, {"error": "fixes are switched off (FIX_MODE=off); the plan is still shown on the row"}
     if FIX_MODE == "on" and kind in LIVE_KINDS:
-        code, obj = hold_file(c, path, kind, f"{v['code']}: " + " | ".join(steps))
+        code, obj = remove_fix(c, v, steps) if kind == "remove" else hold_file(c, path, kind, f"{v['code']}: " + " | ".join(steps))
         if code != 200: record_action(c, "on", kind, path, " | ".join(steps), "refused: " + obj.get("error", ""))
         return code, dict(obj, kind=kind, steps=steps)
     later = FIX_MODE == "on" and kind not in LIVE_KINDS

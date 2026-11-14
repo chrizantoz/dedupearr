@@ -20,6 +20,10 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("Put back overwrites a new file", 'if os.path.lexists(r["orig"]): return 409', 'if False: return 409'),
     ("a download still coming in called seeding only", 'elif ci and not ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"):', 'elif False:'),
     ("the arr's import queue ignored", 'elif (aq := queue_for(r["path"], queue)) and code in', 'elif (aq := None) and code in'),
+    ("remove fix deletes the torrent's files", '"core.remove_torrent", [ci["id"], False]', '"core.remove_torrent", [ci["id"], True]'),
+    ("remove fix trusts last night's scan", 'if not seeding_done(cur): return 409', 'if False: return 409'),
+    ("remove fix ignores the torrent's other files", 'if others: return 409', 'if False: return 409'),
+    ("remove fix leaves the file in the bin when the client refuses", 'back, _ = restore_held(c, obj["held_id"])', 'back = 0'),
     ("failed usenet job called seeding only", 'elif ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in', 'elif False and ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in'),
 ]
 arg = sys.argv[1] if len(sys.argv) > 1 else str(datetime.date.today().timetuple().tm_yday % len(MUTANTS))
@@ -36,7 +40,7 @@ for name, old, new in todo:
     tmp = tempfile.mkdtemp(prefix="dedupearr-mut-")
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(tmp, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     open(os.path.join(tmp, "dedupearr.py"), "w").write(src.replace(old, new, 1))
-    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name else [])
+    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name else [])
     caught = any(subprocess.run([sys.executable, t], capture_output=True, text=True, timeout=600).returncode != 0 for t in suites)
     p = subprocess.run([sys.executable, suites[-1]], capture_output=True, text=True, timeout=600) if not caught else subprocess.CompletedProcess([], 1, "", "")
     print(f"{'PASS' if caught else 'FAIL'} mutant '{name}': {'caught by the suite' if caught else 'SURVIVED - the suite did not notice'}  ({[l for l in p.stdout.splitlines() if l.startswith('FAIL')][:2]})")

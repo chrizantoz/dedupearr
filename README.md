@@ -127,7 +127,7 @@ Phase 1 reads its settings from the environment; the About tab shows them (never
 | `DELUGE_URL`, `DELUGE_PASSWORD` | empty | Deluge web address (`http://host:8112`) and its web password |
 | `NZBGET_URL`, `NZBGET_USER`, `NZBGET_PASSWORD` | empty | NZBGet address (`http://host:6789`) and its control login |
 | `QBIT_URL`, `QBIT_USER`, `QBIT_PASSWORD` | empty | qBittorrent web address and login |
-| `FIX_MODE`, `HOLDING_DIR`, `HOLD_DAYS` | `dryrun`, `<first root>/.dedupearr-holding`, `14` | What a fix may do: `off`, `dryrun` (show the steps, change nothing) or `on` (arrives fix by fix in phase 3); where moved files wait and for how long before deletion |
+| `FIX_MODE`, `HOLDING_DIR`, `HOLD_DAYS` | `dryrun`, `<first root>/.dedupearr-holding`, `14` | What a fix may do: `off`, `dryrun` (show the steps, change nothing) or `on` (arrives fix by fix in phase 3: orphans and finished leftovers so far); where moved files wait and for how long before deletion |
 | `SEED_MIN_RATIO`, `SEED_MIN_DAYS`, `SEED_RULE` | `1.0`, `14`, `auto` | Your seeding rule: a torrent is "done" when the ratio **and** the days are reached (`both`, safe for private trackers) or when one of them is (`either`). `auto` uses `both` for private torrents and `either` for public ones, from the client's private flag (a client that does not say counts as private); then a leftover or second copy "can go now" |
 | `CLIENT_PATH_MAP` | empty | `clientpath=ourpath,…` when a client sees the files under another path than Dedupearr does |
 | `AUTH_USER`, `AUTH_PASSWORD` | empty | Turn the sign-in on from the container (wins over the password set on the About tab) |

@@ -106,6 +106,10 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   check("the banner says what fixes do in this mode", ({ dryrun: /Dry run is on/, off: /switched off/, on: /Fixes are on/ })[mode].test($("#banner").textContent), $("#banner").textContent);
   const liveRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind)).length;
   check("'Move to holding bin' appears exactly on rows whose fix is switched on", $$("#rows button[data-live='1']").length === liveRows, `${$$("#rows button[data-live='1']").length} vs ${liveRows}`);
+  const rmRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind) && i.fix_kind === "remove" && i.client && i.client.client !== "NZBGet").map(i => i.path);
+  const rmBtns = $$("#rows button[data-live='1']").filter(b => /Remove torrent/.test(b.textContent));
+  check("a live fix that removes a torrent says so on the button and in its hint (files kept, Put back returns the file only)", rmBtns.length === rmRows.length && rmBtns.every(b => rmRows.includes(b.dataset.fix) && /files are kept/.test(b.title) && /not the torrent/.test(b.title)), `${rmBtns.length} vs ${rmRows.length}`);
+  if (rmBtns.length) { const rb = rmBtns[0]; rb.click(); await sleep(30); check("the first press on a torrent removal asks to be sure in its own words", /remove and move/.test(rb.textContent) && rb.dataset.armed === "1", rb.textContent); delete rb.dataset.armed; rb.textContent = rb.dataset.was; }
   if (liveRows) {
     const lb = $("#rows button[data-live='1']"); const n0 = posts.filter(p => p.url.includes("api/fix")).length; lb.click(); await sleep(30);
     check("the first press of a real move only asks to be sure, nothing is posted", posts.filter(p => p.url.includes("api/fix")).length === n0 && /Sure/.test(lb.textContent) && lb.dataset.armed === "1", lb.textContent);

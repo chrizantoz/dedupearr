@@ -106,6 +106,7 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                 elif m == "core.get_torrents_status":
                     res = {t["id"]: {"name": t["name"], "save_path": t["save_path"], "state": t["state"], "ratio": t["ratio"], "seeding_time": t["seeding_time"], "time_added": 1783706283, "label": t.get("label", ""), "total_size": 1,
                                      "is_finished": t.get("finished", True), "private": t.get("private", False), "progress": 100.0 if t.get("finished", True) else 50.0, "files": [{"index": i, "path": f, "size": 1, "offset": 0} for i, f in enumerate(t["files"])]} for t in world.get("deluge", [])}
+                elif m == "core.remove_torrent" and world.get("_remove_fails"): return self._send({"result": None, "error": {"message": "Torrent is busy", "code": 4}, "id": r.get("id")})
                 elif m == "core.remove_torrent": world.setdefault("_removed", []).append((p[0], p[1])); world["deluge"] = [t for t in world["deluge"] if t["id"] != p[0]]; res = True
                 else: return self._send({"result": None, "error": {"message": f"unknown method {m}", "code": 2}, "id": r.get("id")})
                 return self._send({"result": res, "error": None, "id": r.get("id")})

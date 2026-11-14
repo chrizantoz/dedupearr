@@ -76,4 +76,29 @@ os.chmod(ro, 0o700); d.HOLDING_DIR = old; d.FIX_MODE = "dryrun"
 stray = os.path.join(DATA, "not-scanned.mkv"); open(stray, "wb").write(b"x" * 2048); d.FIX_MODE = "on"
 code_, obj_ = d.hold_file(c, stray, "test", "test"); check("a file inside the folders that the scan never recorded is refused and stays put", code_ == 409 and os.path.exists(stray) and "no record" in obj_["error"], (code_, obj_))
 os.remove(stray); d.FIX_MODE = "dryrun"
+# ---- P3.2 (2026-11-14): remove a leftover or second copy through the client. The file goes to the holding bin, the client forgets the torrent and keeps its files
+d.FIX_MODE = "on"; d.scan(now=now); scary = P["other_dl"]; T = next(t for t in world["deluge"] if t["id"] == "scary"); T0 = dict(T); ino = os.lstat(scary).st_ino
+row = lambda p: next((i for i in d.state(c)["items"] if i["path"] == p), None)
+check("the test world has a download whose seeding is done and whose torrent is still in the client", row(scary) and row(scary)["fix_kind"] == "remove" and row(scary)["client"]["id"] == "scary", row(scary))
+T.update(ratio=0.1, seeding_time=86400, private=True); code, obj = d.ui_fix(c, scary)
+check("remove: the client is asked again first; a torrent no longer past the rule is left alone", code == 409 and "seeding rule" in obj["error"] and os.path.exists(scary) and "_removed" not in world, (code, obj))
+T.update(T0); T.pop("private", None); big = fake_disk.blob(os.path.join(os.path.dirname(scary), "Scary.Movie.2026.Extras.mkv"), 2, "scary-extras"); T["files"] = T0["files"] + [os.path.basename(big)]; code, obj = d.ui_fix(c, scary)
+check("remove: a torrent that holds another large file is left alone (it would stop seeding that one too)", code == 409 and "other large file" in obj["error"] and os.path.exists(scary) and "_removed" not in world, (code, obj))
+os.remove(big); open(big[:-4] + ".nfo", "w").write("release notes"); T["files"] = T0["files"] + [os.path.basename(big)[:-4] + ".nfo"]
+world["_remove_fails"] = True; code, obj = d.ui_fix(c, scary)
+check("remove: when the client refuses, the file goes straight back and nothing is left in the bin", code == 502 and "back in its place" in obj["error"] and os.lstat(scary).st_ino == ino and d.holding(c)["items"] == [] and any(t["id"] == "scary" for t in world["deluge"]), (code, obj))
+world.pop("_remove_fails"); d.scan(now=now); url = d.CLIENTS["Deluge"]["url"]; d.CLIENTS["Deluge"]["url"] = "http://127.0.0.1:9/deluge"; code, obj = d.ui_fix(c, scary); d.CLIENTS["Deluge"]["url"] = url
+check("remove: a client that does not answer means nothing is changed", code == 502 and "did not answer" in obj["error"] and os.path.exists(scary) and d.holding(c)["items"] == [], (code, obj))
+code, obj = d.ui_fix(c, scary); held = d.holding(c)["items"]
+check("remove: the file moves to the holding bin (same file, nothing deleted) and the client forgets the torrent but keeps its files", code == 200 and not obj["dry_run"] and not os.path.exists(scary) and os.lstat(obj["dest"]).st_ino == ino and world.get("_removed") == [("scary", False)] and not any(t["id"] == "scary" for t in world["deluge"]), (code, obj, world.get("_removed")))
+check("remove: the bin says the torrent is gone and the note says what Put back returns", len(held) == 1 and "torrent" in held[0]["note"] and "not the torrent" in obj["note"], (held, obj.get("note")))
+check("remove: both steps are in the actions log", sum(1 for a in d.actions(c) if a["mode"] == "on" and a["path"] == scary and a["kind"] == "remove" and "refused" not in a["result"] and "would not" not in a["result"]) >= 2)
+code, obj = d.restore_held(c, held[0]["id"]); check("remove: Put back returns the same file to its old place", code == 200 and os.lstat(scary).st_ino == ino, obj)
+world["deluge"].append(dict(T0)); d.scan(now=now); world["deluge"] = [t for t in world["deluge"] if t["id"] != "scary"]; n_rm = len(world["_removed"]); code, obj = d.ui_fix(c, scary)
+check("remove: a torrent already gone from the client needs no client call; the file still goes to the bin", code == 200 and not os.path.exists(scary) and len(world["_removed"]) == n_rm, (code, obj))
+for key, who in (("unmatched", "no client"), ("usenet", "NZBGet")):
+    rw = row(P[key]); code, obj = d.ui_fix(c, P[key]) if rw and rw["fix_kind"] == "remove" else (0, rw)
+    check(f"remove: a leftover with {who} goes to the holding bin and no client is told anything", code == 200 and not os.path.exists(P[key]) and len(world["_removed"]) == n_rm and "_nz_edits" not in world, (code, obj))
+d.client_remove({"client": "qBittorrent", "id": "abc123", "name": "x"}); check("remove: qBittorrent is told to keep the files too", world["_removed"][-1] == ("abc123", "false"), world["_removed"][-1])
+d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)
