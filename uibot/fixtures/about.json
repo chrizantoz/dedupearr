@@ -7,7 +7,7 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-14 01:10, 24 files in 0 s."
+   "text": "Last scan 2026-11-14 04:10, 24 files in 0 s."
   },
   {
    "level": "ok",
@@ -54,24 +54,24 @@
   "SEED_RULE": "auto",
   "CLIENT_PATH_MAP": [],
   "FIX_MODE": "dryrun",
-  "HOLDING_DIR": "/tmp/dedupearr-api-p23pzgcg/data/.dedupearr-holding",
+  "HOLDING_DIR": "/tmp/dedupearr-api-5kdkiyf4/data/.dedupearr-holding",
   "HOLD_DAYS": 14,
   "connections": {
-   "sonarr": "http://127.0.0.1:43239/sonarr",
-   "radarr": "http://127.0.0.1:43239/radarr",
+   "sonarr": "http://127.0.0.1:36277/sonarr",
+   "radarr": "http://127.0.0.1:36277/radarr",
    "whisparr": "not set",
    "sportarr": "not set",
    "lidarr": "not set",
-   "Deluge": "http://127.0.0.1:43239/deluge",
-   "NZBGet": "http://127.0.0.1:43239/nzbget",
-   "qBittorrent": "http://127.0.0.1:43239/qbit"
+   "Deluge": "http://127.0.0.1:36277/deluge",
+   "NZBGet": "http://127.0.0.1:36277/nzbget",
+   "qBittorrent": "http://127.0.0.1:36277/qbit"
   }
  },
  "runs": [
   {
    "id": 1,
-   "started": 1794636613.2336507,
-   "finished": 1794636613.409223,
+   "started": 1794647413.6940548,
+   "finished": 1794647413.8640652,
    "files": 24,
    "bytes": 75497472,
    "wasted": 31457280,
@@ -79,8 +79,8 @@
   }
  ],
  "log": [
-  "2026-11-14 01:10:13 Dedupearr dev listening on :40869",
-  "2026-11-14 01:10:13 scan done: 24 files, 75.5 MB, 31.5 MB that can come back"
+  "2026-11-14 04:10:13 Dedupearr dev listening on :47145",
+  "2026-11-14 04:10:13 scan done: 24 files, 75.5 MB, 31.5 MB that can come back"
  ],
  "errors": [],
  "links": {

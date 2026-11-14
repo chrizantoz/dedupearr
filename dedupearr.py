@@ -1022,7 +1022,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if not path: return self._json(400, {"error": "which file?"})
                 c = db()
                 try: code, obj = ui_fix(c, path)
+                except Exception as e: note_error(f"fix failed for {path}: {e!r}"); return self._json(500, {"error": f"the fix stopped with an error and is written on the About tab: {e}"})   # 2026-11-14: a press answered 'Failed to fetch' and nothing said why
                 finally: c.close()
+                if not obj.get("dry_run"): log(f"fix {obj.get('kind', '')} -> {code} for {path}")
                 return self._json(code, obj)
             if p == "/api/restore":
                 try: hid = int(body.get("id"))

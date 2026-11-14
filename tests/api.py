@@ -63,4 +63,11 @@ state_json["roots"] = ["/data"]; [dk.__setitem__("root", "/data") for dk in stat
 json.dump(state_json, open(os.path.join(fx, "state.json"), "w"), indent=1, default=str)
 j7["settings"]["SCAN_ROOTS"] = ["/data"]; json.dump(j7, open(os.path.join(fx, "about.json"), "w"), indent=1, default=str)
 check("fixtures written for the UI bot", os.path.getsize(os.path.join(fx, "state.json")) > 2000)
+# 2026-11-14: a real fix answered 'Failed to fetch' on the page and nothing recorded why. A fix that stops with an error answers in words and lands in Recent errors
+_real = d.ui_fix; d.ui_fix = lambda c, path: (_ for _ in ()).throw(RuntimeError("disk said no"))
+try: r9 = post("/api/fix", {"path": "/data/x.mkv"})
+finally: d.ui_fix = _real
+check("a fix that stops with an error answers 500 in words and is kept for the About tab", r9[0] == 500 and "disk said no" in str(r9[1]) and any("disk said no" in e["text"] for e in d.ERRORS), r9)
+_ui = open(os.path.join(ROOT, "ui.html")).read()
+check("after a done fix, a page refresh that fails is not shown as a failed fix", "The page could not refresh itself just now" in _ui)
 srv.shutdown(); _mock.shutdown(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)
