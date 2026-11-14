@@ -329,6 +329,7 @@ def db():
     CREATE TABLE IF NOT EXISTS held(id INTEGER PRIMARY KEY AUTOINCREMENT, orig TEXT, held TEXT, size INTEGER, dev INTEGER, ino INTEGER, at REAL, kind TEXT, why TEXT,
         restored REAL, purged REAL, note TEXT);
     """)
+    if "link_ino" not in {r[1] for r in c.execute("PRAGMA table_info(held)")}: c.execute("ALTER TABLE held ADD COLUMN link_ino INTEGER")   # P3.3: the hardlink a relink left at the old place
     cols = {r[1] for r in c.execute("PRAGMA table_info(verdict)")}
     for col, typ in (("client", "TEXT"), ("removable", "INTEGER"), ("category", "TEXT"), ("queue", "TEXT")):
         if col not in cols: c.execute(f"ALTER TABLE verdict ADD COLUMN {col} {typ}")
@@ -449,6 +450,7 @@ def scan(c=None, now=None):
     """One pass: record every video file, group names that share an inode, find identical copies, judge recycle bins."""
     own = c is None; c = c or db(); now = now or time.time()
     if SCANNING["on"]: return None
+    if FIXING["path"]: log("scan skipped: a fix is still comparing two big files"); return None
     SCANNING.update(on=True, started=now, phase="listing files", files=0)
     try:
         started = now; n = 0; total = 0
@@ -612,10 +614,11 @@ def plan_fix(v):
     code = v["code"]; ci = v.get("client") if isinstance(v.get("client"), dict) else (json.loads(v["client"]) if v.get("client") else None)
     kind = FIXABLE.get(code)
     if not kind: return None, ["Nothing to fix here: this file is fine or needs no change."], 0
-    if not v.get("removable", True) and kind in ("remove", "relink"): return None, [seed_sentence(ci)], 0
+    if kind == "relink" and ci and not ci.get("finished"): return None, ["The client is still downloading this file, so it is left alone."], 0   # a relink keeps the client seeding, so it does not wait for the seeding rule
+    if not v.get("removable", True) and kind == "remove": return None, [seed_sentence(ci)], 0
     hold = f"{HOLDING_DIR}/{os.path.basename(v['path'])}"
-    if kind == "relink": steps = ["Check both checksums again right before the change.", f"Move this copy into the holding bin at {hold} (nothing is deleted).", f"Create a hardlink from the library file {friendly_title(v['twin'] or '')} at this download's name, so the client keeps seeding the same bytes.",
-                                 "Confirm the link count is now 2 and the client still sees the file; if anything fails, put the copy back.", f"Keep the moved copy for {HOLD_DAYS} days, then delete it, unless you press Undo."]
+    if kind == "relink": steps = ["Compare both files byte for byte right before the change (a big file takes a few minutes).", f"Move this copy into the holding bin at {hold} (nothing is deleted).", f"Create a hardlink from the library file {friendly_title(v['twin'] or '')} at this download's name, so the client keeps seeding the same bytes.",
+                                 "Confirm both names are now one file; if anything fails, put the copy back.", f"Keep the moved copy for {HOLD_DAYS} days, then delete it, unless you press Undo."]
     elif kind == "remove": steps = ([f"Ask {ci['client']} once more whether the torrent '{ci['name']}' is still past your seeding rule, then remove it there without deleting its files." if ci and ci.get("client") != "NZBGet" else ("It came from usenet and nothing seeds it; NZBGet's history is left as it is." if ci else "No client holds this file, so there is nothing to tell a client.")]
                                     + [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."])
     elif kind == "bin": steps = [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."]
@@ -668,7 +671,10 @@ def restore_held(c, hid):
     try: st = os.lstat(r["held"])
     except FileNotFoundError: return 409, {"error": "the file is no longer in the holding bin (someone moved it by hand)"}
     if (st.st_ino, st.st_size) != (r["ino"], r["size"]): return 409, {"error": "the file in the holding bin is not the one that went in, so it is left alone"}
-    if os.path.lexists(r["orig"]): return 409, {"error": "something new already sits at its old place, so nothing was moved; move that away first"}
+    if os.path.lexists(r["orig"]):
+        so = os.lstat(r["orig"])   # a relink left a hardlink to the library file here; it may be replaced only while the library still holds the same file under another name
+        if not (r["kind"] == "relink" and r["link_ino"] and stat_regular(so) and (so.st_ino, so.st_size) == (r["link_ino"], r["size"]) and so.st_nlink >= 2):
+            return 409, {"error": "something new already sits at its old place, so nothing was moved; move that away first"}
     try: os.makedirs(os.path.dirname(r["orig"]), exist_ok=True); os.rename(r["held"], r["orig"])
     except OSError as e: return (409, {"error": READ_ONLY_NOTE}) if e.errno in (30, 13, 1) else (500, {"error": f"putting it back failed, nothing was changed: {e.strerror or e}"})
     c.execute("UPDATE held SET restored=? WHERE id=?", (time.time(), hid)); c.commit(); tidy_holding(os.path.dirname(r["held"]))
@@ -738,18 +744,85 @@ def remove_fix(c, v, steps, now=None):
         record_action(c, "on", "remove", path, f"removed the torrent '{torrent['name']}' from {torrent['client']} (files kept)", "done; the file waits in the holding bin")
         obj["note"] = f"Removed the torrent from {torrent['client']} and moved the file to the holding bin. {obj['frees_h']} comes back after {HOLD_DAYS} days; Put back (Actions tab) returns the file until then, not the torrent."
     return 200, obj
-LIVE_KINDS = {"bin", "remove"}   # P3.1: orphans to the holding bin. P3.2 (2026-11-14): remove a leftover or second copy through the client. Relink and emptying the recycle bin stay dry runs until their gates pass
-def ui_fix(c, path):
+# ---------------------------------------------------------------------------------------------------------------- relink (P3.3)
+FIXING = {"path": None, "since": 0, "done": 0, "total": 0, "last": None}   # one long fix at a time; the page shows its progress and its result
+def same_bytes(a, b, tick=None):
+    """True when the two files hold exactly the same bytes. Read side by side, so it stops at the first difference and trusts no stored checksum."""
+    with open(a, "rb", buffering=0) as fa, open(b, "rb", buffering=0) as fb:
+        while True:
+            x = fa.read(8 * 1024 * 1024); y = fb.read(8 * 1024 * 1024)
+            if x != y: return False
+            if not x: return True
+            if tick: tick(len(x))
+def relink_fix(c, v, steps, now=None, tick=None):
+    """P3.3: the download is a second copy of a library file. Compare every byte, move the copy to the holding bin, put a hardlink to the library
+    file at its name (the client keeps seeding the same bytes), check the two names are one file. Any failure puts the copy back. Returns (code, obj)."""
+    path, twin = v["path"], v.get("twin") or ""; ci = json.loads(v["client"]) if isinstance(v.get("client"), str) and v["client"] else (v.get("client") or None)
+    if ci and not ci.get("finished"): return 409, {"error": "the client is still downloading this file, so nothing was changed"}
+    rows = {r["path"]: r for r in c.execute("SELECT path, dev, ino, size, kind FROM file WHERE path IN (?, ?)", (path, twin))}
+    if path not in rows or twin not in rows or rows[twin]["kind"] != "library": return 409, {"error": "the last scan has no record of both files, so nothing was changed; scan again and look at the row once more"}
+    path, twin = rows[path]["path"], rows[twin]["path"]
+    def look():
+        try: a, b = os.lstat(path), os.lstat(twin)
+        except FileNotFoundError: return None, "one of the two files is no longer there; the next scan drops the row"
+        if not (stat_regular(a) and stat_regular(b)): return None, "one of the two is not a plain file, so both are left alone"
+        if (a.st_dev, a.st_ino, a.st_size) != tuple(rows[path][k] for k in ("dev", "ino", "size")) or (b.st_dev, b.st_ino, b.st_size) != tuple(rows[twin][k] for k in ("dev", "ino", "size")): return None, "one of the two files changed since the last scan, so nothing was changed; scan again and look at the row once more"
+        if a.st_dev != b.st_dev: return None, "the two files are on different disks, and one file cannot have a name on two disks; nothing was changed"
+        if a.st_ino == b.st_ino: return None, "the two names are already one file; the next scan shows it"
+        return (a, b), ""
+    st, err = look()
+    if not st: return 409, {"error": err}
+    before = [(s.st_size, s.st_mtime_ns) for s in st]
+    try: same = same_bytes(path, twin, tick)
+    except OSError as e: return 500, {"error": f"one of the two files could not be read ({e.strerror or e}), so nothing was changed"}
+    if not same: return 409, {"error": "the two files are not identical byte for byte after all, so nothing was changed; the next scan judges them again"}
+    st, err = look()
+    if not st or [(s.st_size, s.st_mtime_ns) for s in st] != before: return 409, {"error": err or "one of the two files was written to during the comparison, so nothing was changed"}
+    code, obj = hold_file(c, path, "relink", f"{v['code']}: " + " | ".join(steps), now)
+    if code != 200: return code, obj
+    def undo(msg):
+        try:
+            if os.path.lexists(path) and os.lstat(path).st_ino == st[1].st_ino: os.remove(path)   # only ever the link this fix just made
+        except OSError: pass
+        back, _ = restore_held(c, obj["held_id"])
+        record_action(c, "on", "relink", path, msg, "the copy was put back; nothing was changed" if back == 200 else "the copy waits in the holding bin, Put back returns it")
+        return 500, {"error": msg + (" The copy is back in its place; nothing was changed." if back == 200 else " The copy waits in the holding bin; Put back (Actions tab) returns it.")}
+    try: os.link(twin, path)
+    except OSError as e: return undo("The two files sit on different disks of the pool, and one file cannot have a name on two disks." if e.errno == 18 else f"The hardlink could not be made ({e.strerror or e}).")
+    try: a, b = os.lstat(path), os.lstat(twin); one = a.st_ino == b.st_ino and a.st_dev == b.st_dev and b.st_nlink >= 2
+    except OSError: one = False
+    if not one: return undo("After linking, the two names were not one file.")
+    c.execute("UPDATE held SET link_ino=?, note=? WHERE id=?", (b.st_ino, "its old name now points at the library file; Put back swaps this copy back in", obj["held_id"])); c.commit()
+    record_action(c, "on", "relink", path, f"linked to the library file {twin}", "done; both names are one file, the old copy waits in the holding bin")
+    obj["note"] = "Done: the download's name now points at the library file, so both are one file" + (f" and {ci['client']} keeps seeding it" if ci and ci.get("client") != "NZBGet" else "") + f". The old copy waits in the holding bin; {obj['frees_h']} comes back after {HOLD_DAYS} days, and Put back (Actions tab) undoes it until then."
+    return 200, obj
+def relink_job(v, steps):
+    """The relink runs beside the page (comparing two big files takes minutes); FIXING carries its progress and, at the end, its result."""
+    c = db(); path = v["path"]
+    def tick(n): FIXING["done"] += n
+    try: code, obj = relink_fix(c, v, steps, tick=tick)
+    except Exception as e: note_error(f"fix failed for {path}: {e!r}"); code, obj = 500, {"error": f"the fix stopped with an error and is written on the About tab: {e}"}
+    try:
+        if code != 200: record_action(c, "on", "relink", path, " | ".join(steps), "refused: " + obj.get("error", ""))
+    finally:
+        c.close(); log(f"fix relink -> {code} for {path}")
+        FIXING.update(path=None, last={"path": path, "ok": code == 200, "note": obj.get("note") or obj.get("error", ""), "at": time.time()})
+LIVE_KINDS = {"bin", "remove", "relink"}   # P3.3 (2026-11-14): relink an identical copy. P3.1: orphans to the holding bin. P3.2 (2026-11-14): remove a leftover or second copy through the client. Relink and emptying the recycle bin stay dry runs until their gates pass
+def ui_fix(c, path, background=False):
     """POST /api/fix: show the plan (dry run) or carry it out (on). Phase 3 ships the 'on' branch fix by fix; until then every call is a dry run."""
     if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so a fix never races the scan"}
+    if FIXING["path"]: return 409, {"error": "another fix is still comparing two big files; try again when it is done"}
     r = c.execute("SELECT * FROM verdict WHERE path=?", (path,)).fetchone()
     if not r: return 404, {"error": "that file is not in the last scan"}
     v = dict(r); v["removable"] = bool(v.get("removable"))
     kind, steps, frees = plan_fix(v)
     if not kind: return 400, {"error": steps[0]}
     if FIX_MODE == "off": return 403, {"error": "fixes are switched off (FIX_MODE=off); the plan is still shown on the row"}
+    if FIX_MODE == "on" and kind == "relink" and background:
+        FIXING.update(path=path, since=time.time(), done=0, total=v.get("size") or 0); threading.Thread(target=relink_job, args=(v, steps), daemon=True).start()
+        return 202, {"ok": True, "dry_run": False, "started": True, "kind": kind, "steps": steps, "note": "Comparing both files byte for byte first; a big file takes a few minutes. The row shows the progress and the result."}
     if FIX_MODE == "on" and kind in LIVE_KINDS:
-        code, obj = remove_fix(c, v, steps) if kind == "remove" else hold_file(c, path, kind, f"{v['code']}: " + " | ".join(steps))
+        code, obj = relink_fix(c, v, steps) if kind == "relink" else remove_fix(c, v, steps) if kind == "remove" else hold_file(c, path, kind, f"{v['code']}: " + " | ".join(steps))
         if code != 200: record_action(c, "on", kind, path, " | ".join(steps), "refused: " + obj.get("error", ""))
         return code, dict(obj, kind=kind, steps=steps)
     later = FIX_MODE == "on" and kind not in LIVE_KINDS
@@ -760,7 +833,7 @@ def ui_fix(c, path):
 BULK_MAX = 500
 def in_bulk(kind, ci):
     """May this fix run from 'Move all shown'? Only a plain move that Put back undoes in full: removing a torrent cannot be undone, so that stays one press per row."""
-    return FIX_MODE == "on" and kind in LIVE_KINDS and not (kind == "remove" and ci and ci.get("client") in REMOVE_READERS)
+    return FIX_MODE == "on" and kind in LIVE_KINDS and kind != "relink" and not (kind == "remove" and ci and ci.get("client") in REMOVE_READERS)
 def ui_fix_all(c, paths):
     """POST /api/fix_all: move every listed file to the holding bin, one after the other, each through the same checks as its own button.
     A file that is refused is left alone and named; the rest still go. Returns (code, obj)."""
@@ -798,7 +871,7 @@ def state(c):
         ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and known)) else ""
         v["removable"] = bool(v.get("removable")) and v["needs_you"]
         v["category"] = v.get("category") if v.get("category") in CAT_LABEL else "other"; v["category_label"] = CAT_LABEL[v["category"]]
-        v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"])
+        v["fixable"] = v["code"] in FIXABLE and v["needs_you"] and (v["code"] in ("ORPHAN", "BIN_OLD") or v["removable"] or (v["code"] == "DUPLICATE_COPY" and (not ci or bool(ci.get("finished")))))
         v["fix_kind"] = FIXABLE.get(v["code"]) if v["fixable"] else ""
         v["bulk"] = bool(v["fixable"] and in_bulk(v["fix_kind"], ci))   # may go with 'Move all shown'
         v["wait"] = seed_wait(v.get("client") if isinstance(v.get("client"), dict) else None) if v["needs_you"] and not v["fixable"] and v["code"] in FIXABLE else ""   # why there is no button yet
@@ -826,7 +899,7 @@ def state(c):
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
             "categories": [dict(cc, wasted_h=human(cc["wasted"])) for cc in cats.values() if cc["files"]],
-            "clients": client_status(), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "live_kinds": sorted(LIVE_KINDS), "holding_dir": HOLDING_DIR, "holding": holding(c), "nightly_bot": nightly_bot()}
+            "clients": client_status(), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "live_kinds": sorted(LIVE_KINDS), "fixing": dict(FIXING), "holding_dir": HOLDING_DIR, "holding": holding(c), "nightly_bot": nightly_bot()}
 
 def nightly_bot():
     """The nightly page bot's last report (written by the server's user script into CONFIG_DIR/uibot.json): passed/total/failed, the bot's build and the page's build."""
@@ -1043,15 +1116,16 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(429, {"error": f"slow down: the demo allows {SANDBOX_RATE} clicks a minute per visitor"})
             if p == "/api/scan":
                 if SCANNING["on"]: return self._json(200, {"ok": True, "note": "a scan is already running"})
+                if FIXING["path"]: return self._json(200, {"ok": True, "note": "a fix is still comparing two big files; scan when it is done"})
                 threading.Thread(target=scan, daemon=True).start(); return self._json(200, {"ok": True, "note": "scan started; the page updates itself"})
             if p == "/api/fix":
                 path = str(body.get("path") or "")
                 if not path: return self._json(400, {"error": "which file?"})
                 c = db()
-                try: code, obj = ui_fix(c, path)
+                try: code, obj = ui_fix(c, path, background=True)
                 except Exception as e: note_error(f"fix failed for {path}: {e!r}"); return self._json(500, {"error": f"the fix stopped with an error and is written on the About tab: {e}"})   # 2026-11-14: a press answered 'Failed to fetch' and nothing said why
                 finally: c.close()
-                if not obj.get("dry_run"): log(f"fix {obj.get('kind', '')} -> {code} for {path}")
+                if not obj.get("dry_run"): log(f"fix {obj.get('kind', '')} -> {'started' if code == 202 else code} for {path}")
                 return self._json(code, obj)
             if p == "/api/fix_all":
                 paths = body.get("paths")

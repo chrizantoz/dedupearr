@@ -58,13 +58,18 @@ write("errors", e)
 # errors world also checks the home-network case: sign-in on but the LAN let you in, so no Sign out
 e["state"]["auth"] = {"enabled": True, "via": "lan", "user": "owner", "source": "env", "local_no_login": True, "local_env": False, "warning": "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."}; write("errors", e)
 # live: FIX_MODE=on with the holding bin in use (P3.1): orphans offer a real move, everything else still previews, two files wait in the bin
-e = copy.deepcopy(base); s = e["state"]; s["fix_mode"] = "on"; s["live_kinds"] = ["bin", "remove"]; s["auth"] = {"enabled": True, "via": "", "user": "owner", "source": "page", "local_no_login": False, "local_env": False, "warning": "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."}
+e = copy.deepcopy(base); s = e["state"]; s["fix_mode"] = "on"; s["live_kinds"] = ["bin", "relink", "remove"]; s["auth"] = {"enabled": True, "via": "", "user": "owner", "source": "page", "local_no_login": False, "local_env": False, "warning": "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."}
 s["holding"] = {"days": 14, "dir": "/data/.dedupearr-holding", "bytes": 3 * 10**9, "bytes_h": "3 GB", "items": [
     {"id": 7, "orig": "/data/torrents/tv/Old.Show.S01E01.mkv", "title": "Old Show S01E01", "size": 2 * 10**9, "size_h": "2 GB", "kind": "bin", "why": "ORPHAN: Move the file into the holding bin.", "when": "2026-11-10T03:30", "days_left": 11.5, "note": ""},
     {"id": 8, "orig": "/data/usenet/movies/Some Film (2001).mkv", "title": "Some Film (2001)", "size": 10**9, "size_h": "1 GB", "kind": "bin", "why": "ORPHAN: Move the file into the holding bin.", "when": "2026-11-11T03:30", "days_left": 12.5, "note": ""}]}
 if not any(i.get("fixable") and i.get("fix_kind") == "bin" for i in s["items"]): raise SystemExit("live world: the base fixtures have no orphan to move")
 if not any(i.get("fixable") and i.get("fix_kind") == "remove" and (i.get("client") or {}).get("client") == "Deluge" for i in s["items"]): raise SystemExit("live world: the base fixtures have no torrent to remove")
-for i in s["items"]: i["bulk"] = bool(i.get("fixable") and i.get("fix_kind") in s["live_kinds"] and not (i.get("fix_kind") == "remove" and (i.get("client") or {}).get("client") in ("Deluge", "qBittorrent")))   # the same rule as in_bulk() in the app
+for i in s["items"]: i["bulk"] = bool(i.get("fixable") and i.get("fix_kind") in ("bin", "remove") and not (i.get("fix_kind") == "remove" and (i.get("client") or {}).get("client") in ("Deluge", "qBittorrent")))   # the same rule as in_bulk() in the app
 if sum(1 for i in s["items"] if i["bulk"] and i.get("needs_you")) < 2: raise SystemExit("live world: the base fixtures have fewer than two plain moves for 'Move all shown'")
+rl = next((i for i in s["items"] if i.get("fixable") and i.get("fix_kind") == "relink"), None)
+if not rl: raise SystemExit("live world: the base fixtures have no identical copy to relink")
 write("live", e)
-print("edge fixtures written: tidy, empty, huge, down, errors, live")
+# busy: a relink is comparing two big files right now (P3.3): its row shows the progress instead of a button
+e = copy.deepcopy(e); e["state"]["fixing"] = {"path": rl["path"], "since": 1, "done": rl["size"] // 4, "total": rl["size"], "last": None}
+write("busy", e)
+print("edge fixtures written: tidy, empty, huge, down, errors, live, busy")

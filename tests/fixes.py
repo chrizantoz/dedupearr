@@ -49,7 +49,8 @@ check("on: the bin lists it with the days left, the row leaves the page", len(he
 check("on: the move is in the actions log as done, with its undo", any(a["mode"] == "on" and a["path"] == orphan and a["undo"] for a in d.actions(c)))
 d.scan(now=now); check("the next scan does not list the holding bin as library or downloads", not any(i["path"].startswith(d.HOLDING_DIR) for i in d.state(c)["items"]))
 rel = next((i for i in d.state(c)["items"] if i["fixable"] and i["fix_kind"] == "relink"), None)
-if rel: code, obj = d.ui_fix(c, rel["path"]); check("on: a fix kind not switched on yet still only runs as a dry run", code == 200 and obj["dry_run"] and os.path.exists(rel["path"]) and "not switched on yet" in obj["note"], obj)
+d.LIVE_KINDS.discard("relink")
+if rel: code, obj = d.ui_fix(c, rel["path"]); d.LIVE_KINDS.add("relink"); check("on: a fix kind not switched on yet still only runs as a dry run", code == 200 and obj["dry_run"] and os.path.exists(rel["path"]) and "not switched on yet" in obj["note"], obj)
 open(orphan, "wb").write(b"new file at the old place")
 code, obj = d.restore_held(c, held[0]["id"]); check("Put back refuses when something new sits at the old place", code == 409 and "old place" in obj["error"] and os.path.exists(obj.get("dest") or d.hold_target(orphan, now)) is not None, obj)
 os.remove(orphan); code, obj = d.restore_held(c, held[0]["id"])
@@ -117,5 +118,36 @@ check("move all: a file that changed is left alone and named, the rest still wen
 check("move all: a row that removes a torrent is left alone and no client is told anything", os.path.exists(scary) and "own row" in why.get(scary, "") and len(world["_removed"]) == n_rm, why)
 check("move all: an ignored file and a file the scan never saw are left alone", os.path.exists(B[3]) and "ignore" in why.get(B[3], "") and "not in the last scan" in why.get("/data/never-scanned.mkv", ""), why)
 check("move all: the note says how many moved and how many were left, in words", "Moved 2 files" in obj["note"] and "4 were left alone" in obj["note"], obj["note"])
+# ---- P3.3 (2026-11-14): relink an identical copy. Compare every byte, copy to the holding bin, hardlink in its place; the client keeps seeding and is told nothing
+dl, lib = P["dup_dl"], P["dup_lib"]; TD = next(t for t in world["deluge"] if t["id"] == "dup1"); TD.update(ratio=0.01, seeding_time=3600, private=True); d.scan(now=now); n_rm = len(world["_removed"])
+r0 = row(dl); ino_dl, ino_lib = os.lstat(dl).st_ino, os.lstat(lib).st_ino
+check("relink: an identical copy that still seeds can be relinked now (it keeps seeding), and never rides along with 'Move all'", r0 and r0["fix_kind"] == "relink" and r0["fixable"] and not r0["removable"] and not r0["bulk"] and ino_dl != ino_lib, r0)
+vrow = dict(c.execute("SELECT * FROM verdict WHERE path=?", (dl,)).fetchone()); vdl = dict(vrow, client=json.dumps(dict(json.loads(vrow["client"]), finished=False)))
+code, obj = d.relink_fix(c, vdl, ["x"]); check("relink: a file the client is still downloading is left alone", code == 409 and "still downloading" in obj["error"] and os.lstat(dl).st_ino == ino_dl, (code, obj))
+check("relink: the plan for a file still downloading says so instead of offering steps", d.plan_fix(vdl)[0] is None and "still downloading" in d.plan_fix(vdl)[1][0])
+with open(lib, "r+b") as fh: fh.seek(2 * 1024 * 1024 + 7); keep = fh.read(1); fh.seek(-1, 1); fh.write(bytes([keep[0] ^ 1]))
+code, obj = d.ui_fix(c, dl); check("relink: one different byte in the middle and nothing is changed (no checksum from the scan is trusted)", code == 409 and "not identical" in obj["error"] and os.lstat(dl).st_ino == ino_dl and os.lstat(lib).st_nlink == 1 and not any(h["orig"] == dl for h in d.holding(c)["items"]), (code, obj))
+with open(lib, "r+b") as fh: fh.seek(2 * 1024 * 1024 + 7); fh.write(keep)
+_link = os.link
+def _nolink(a, b): raise OSError(18, "Invalid cross-device link")
+os.link = _nolink; code, obj = d.ui_fix(c, dl); os.link = _link
+check("relink: when the hardlink cannot be made, the copy goes straight back and the bin stays empty of it", code == 500 and "back in its place" in obj["error"] and os.lstat(dl).st_ino == ino_dl and not any(h["orig"] == dl for h in d.holding(c)["items"]), (code, obj))
+d.scan(now=now); code, obj = d.ui_fix(c, dl); held = [h for h in d.holding(c)["items"] if h["orig"] == dl]
+check("relink: both names are one file, the old copy waits in the holding bin, nothing was deleted", code == 200 and os.lstat(dl).st_ino == ino_lib and os.lstat(lib).st_nlink == 2 and len(held) == 1 and os.lstat(obj["dest"]).st_ino == ino_dl, (code, obj))
+check("relink: the client is told nothing and the note says it keeps seeding", len(world["_removed"]) == n_rm and "keeps seeding" in obj["note"] and "Put back" in obj["note"], obj.get("note"))
+d.scan(now=now); check("relink: the next scan sees a real copy and a linked seed, and leaves the holding bin alone", row(dl)["code"] == "LINKED_SEED" and row(lib)["code"] == "REAL_COPY" and os.path.exists(obj["dest"]), (row(dl)["code"], row(lib)["code"]))
+code, obj2 = d.restore_held(c, held[0]["id"]); check("relink: Put back swaps the old copy back in and the library file is a single name again", code == 200 and os.lstat(dl).st_ino == ino_dl and os.lstat(lib).st_nlink == 1 and os.lstat(lib).st_ino == ino_lib, (code, obj2))
+d.scan(now=now); code, obj = d.ui_fix(c, dl); hid = next(h["id"] for h in d.holding(c)["items"] if h["orig"] == dl); os.remove(dl); open(dl, "wb").write(b"something new at the old name")
+code, obj2 = d.restore_held(c, hid); check("relink: Put back never overwrites something new at the old name", code == 409 and "something new" in obj2["error"] and open(dl, "rb").read() == b"something new at the old name", (code, obj2))
+os.remove(dl); os.link(lib, dl); os.remove(lib); code, obj2 = d.restore_held(c, hid)
+check("relink: Put back never replaces the last name of the library file", code == 409 and os.lstat(dl).st_ino == ino_lib, (code, obj2))
+os.link(dl, lib); code, obj2 = d.restore_held(c, hid); d.scan(now=now)
+d.FIXING["path"] = "/busy"; code, obj = d.ui_fix(c, dl); sc = d.scan(now=now); d.FIXING["path"] = None
+check("relink: while one long fix runs, another fix and a scan both wait", code == 409 and "another fix" in obj["error"] and sc is None, (code, obj, sc))
+code, obj = d.ui_fix(c, dl, background=True); t0 = time.time()
+while d.FIXING["path"] and time.time() - t0 < 20: time.sleep(0.05)
+last = d.FIXING["last"] or {}
+check("relink: from the page it runs beside the page and leaves its result for the row", code == 202 and obj.get("started") and last.get("ok") and last.get("path") == dl and d.FIXING["done"] == d.FIXING["total"] > 0 and os.lstat(dl).st_ino == ino_lib, (d.FIXING, code))
+check("relink: the page state carries the progress and the last result", d.state(c)["fixing"]["last"]["path"] == dl and "relink" in d.state(c)["live_kinds"])
 d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)

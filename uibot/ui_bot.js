@@ -94,7 +94,7 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   check("every row still seeding says when it can go, where the button would be", waiting.every(i => { const r = $(`#r-${i.path.replace(/[^a-z0-9]/gi, "-")}`); return r && !r.querySelector("button[data-fix]") && r.querySelector(".chip.wait") && r.querySelector(".chip.wait").textContent === i.wait; }), waiting.map(i => i.wait).join(" | "));
   // phase 3: Preview fix shows a plan and changes nothing
   const fixables = items.filter(i => i.fixable);
-  const drawnFix = items.slice(0, 500).filter(i => i.fixable).length;
+  const drawnFix = items.slice(0, 500).filter(i => i.fixable && i.path !== ((data.state.fixing || {}).path || "")).length;
   check("'Preview fix' is offered exactly on the fixable rows", $$("#rows button[data-fix]").length === drawnFix, `${$$("#rows button[data-fix]").length} vs ${drawnFix}`);
   if (fixables.length) {
     const fb = $("#rows button[data-fix]:not([data-live])"); const fpath = fb ? fb.dataset.fix : ""; if (fb) { fb.click(); await sleep(80); }
@@ -104,7 +104,14 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   const mode = data.state.fix_mode || "dryrun"; const live = new Set(data.state.live_kinds || []);
   const au = data.state.auth || {}; check("Sign out shows only with a sign-in, and not when the home network let you in", $("#signout").hidden === !(au.enabled && !au.via), JSON.stringify(au));
   check("the banner says what fixes do in this mode", ({ dryrun: /Dry run is on/, off: /switched off/, on: /Fixes are on/ })[mode].test($("#banner").textContent), $("#banner").textContent);
-  const liveRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind)).length;
+  const fixing = (data.state.fixing || {}).path || "";
+  const liveRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind) && i.path !== fixing).length;
+  const relRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind) && i.fix_kind === "relink" && i.path !== fixing).map(i => i.path);
+  const relBtns = $$("#rows button[data-live='1']").filter(b => /Make them one file/.test(b.textContent));
+  check("a live relink says what it does on the button and in its hint (every byte compared, Put back undoes it)", relBtns.length === relRows.length && relBtns.every(b => relRows.includes(b.dataset.fix) && /byte for byte/.test(b.title) && /Put back/.test(b.title)), `${relBtns.length} vs ${relRows.length}`);
+  if (relBtns.length) { const rb = relBtns[0]; rb.click(); await sleep(30); check("the first press on a relink asks to be sure in its own words", /make them one file/.test(rb.textContent) && rb.dataset.armed === "1", rb.textContent); delete rb.dataset.armed; rb.textContent = rb.dataset.was; }
+  const busyChips = $$("#rows [data-fixing]");
+  check("a fix that is still comparing two files shows its progress on its own row instead of a button", fixing && items.slice(0, 500).some(i => i.path === fixing && i.needs_you) ? busyChips.length === 1 && /comparing both files… \d+%/.test(busyChips[0].textContent) && !busyChips[0].closest("tr").querySelector("button[data-fix]") : busyChips.length === 0, `${busyChips.length} chips, fixing=${fixing}`);
   check("'Move to holding bin' appears exactly on rows whose fix is switched on", $$("#rows button[data-live='1']").length === liveRows, `${$$("#rows button[data-live='1']").length} vs ${liveRows}`);
   const rmRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind) && i.fix_kind === "remove" && i.client && i.client.client !== "NZBGet").map(i => i.path);
   const rmBtns = $$("#rows button[data-live='1']").filter(b => /Remove torrent/.test(b.textContent));
