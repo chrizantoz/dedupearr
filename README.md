@@ -128,6 +128,7 @@ Phase 1 reads its settings from the environment; the About tab shows them (never
 | `NZBGET_URL`, `NZBGET_USER`, `NZBGET_PASSWORD` | empty | NZBGet address (`http://host:6789`) and its control login |
 | `QBIT_URL`, `QBIT_USER`, `QBIT_PASSWORD` | empty | qBittorrent web address and login |
 | `FIX_MODE`, `HOLDING_DIR`, `HOLD_DAYS` | `dryrun`, `<first root>/.dedupearr-holding`, `14` | What a fix may do: `off`, `dryrun` (show the steps, change nothing) or `on` (arrives fix by fix in phase 3: orphans and finished leftovers so far); where moved files wait and for how long before deletion |
+| `LOCK_DIR`, `LOCK_STALE_H` | `<first root>/.fix-locks`, `6` | The lock shared with Auditarr: while one app changes a file, the other leaves it alone. Both apps must point at the same real folder (Auditarr's default is `.fix-locks` beside its trash folder); a marker older than this many hours is ignored |
 | `SEED_MIN_RATIO`, `SEED_MIN_DAYS`, `SEED_RULE` | `1.0`, `14`, `auto` | Your seeding rule: a torrent is "done" when the ratio **and** the days are reached (`both`, safe for private trackers) or when one of them is (`either`). `auto` uses `both` for private torrents and `either` for public ones, from the client's private flag (a client that does not say counts as private); then a leftover or second copy "can go now" |
 | `CLIENT_PATH_MAP` | empty | `clientpath=ourpath,…` when a client sees the files under another path than Dedupearr does |
 | `AUTH_USER`, `AUTH_PASSWORD` | empty | Turn the sign-in on from the container (wins over the password set on the About tab) |

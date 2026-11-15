@@ -186,4 +186,31 @@ check("pack: one press moves both spare copies to the holding bin, leaves the ha
 check("pack: each held file says its torrent is gone, and the note counts files and space", all("torrent" in h["note"] for h in held) and "its 2 files" in obj["note"] and "1 that is linked" in obj["note"], obj.get("note"))
 code, obj = d.restore_held(c, held[0]["id"]); check("pack: Put back returns one file of the pack on its own", code == 200 and os.path.exists(held[0]["orig"]), (code, obj))
 d.FIX_MODE = "dryrun"
+# ---- P3.5 (2026-11-15): the lock shared with Auditarr. One marker per file in LOCK_DIR, named after the inode, holding {"app","what","path","since"};
+# the same shape is checked in Auditarr's tests/lock.py. While Auditarr holds a file, no fix here touches it
+def theirs(path, app="Auditarr", what="rewrapping the file", age=0):
+    os.makedirs(d.LOCK_DIR, exist_ok=True); m = os.path.join(d.LOCK_DIR, f"{os.stat(path).st_ino}.lock")
+    json.dump(dict(app=app, what=what, path=path, since=time.time() - age), open(m, "w")); os.utime(m, (time.time() - age, time.time() - age)); return m
+d.FIX_MODE = "on"; LK = os.path.join(DATA, "torrents", "tv", "Lock.Show.S01E01.1080p.WEB-GRP.mkv"); LL = os.path.join(DATA, "media", "tv", "Lock Show", "Season 01", "Lock Show - S01E01.mkv"); LO = os.path.join(DATA, "torrents", "tv", "Lock.Other.S01E01.1080p.WEB-GRP.mkv")
+fake_disk.blob(LK, 3, "lock-e1"); fake_disk.blob(LL, 3, "lock-e1"); fake_disk.blob(LO, 2, "lock-other"); d.scan(now=now); inos = {p: os.lstat(p).st_ino for p in (LK, LL, LO)}
+check("lock: the lock folder sits at the top of the first scanned folder, next to the holding bin", d.LOCK_DIR == os.path.join(DATA, ".fix-locks") and os.path.dirname(d.LOCK_DIR) == os.path.dirname(d.HOLDING_DIR), d.LOCK_DIR)
+m = theirs(LO); code, obj = d.hold_file(c, LO, "bin", "test")
+check("lock: a file Auditarr is rewriting is not moved, and the answer says who has it and what they are doing", code == 409 and obj["error"].startswith("Auditarr is working on this file right now (rewrapping the file)") and "nothing was changed" in obj["error"] and os.lstat(LO).st_ino == inos[LO] and os.path.exists(m), (code, obj))
+code, obj = d.ui_fix_all(c, [LO]); check("lock: 'Move all' leaves that file alone and names the reason", code == 200 and obj["done"] == 0 and os.path.exists(LO), (code, obj))
+os.remove(m); m = theirs(LL); v = {"path": LK, "twin": LL, "code": "DUPLICATE_COPY", "client": None}; code, obj = d.relink_fix(c, v, ["x"])
+check("lock: a relink waits when Auditarr holds the library file, both files untouched and no marker of ours left behind", code == 409 and "Auditarr is working on this file" in obj["error"] and os.lstat(LK).st_ino == inos[LK] and os.lstat(LL).st_nlink == 1 and os.listdir(d.LOCK_DIR) == [os.path.basename(m)] and not d._LOCKS, (code, obj, os.listdir(d.LOCK_DIR)))
+os.utime(m, (time.time() - 7 * 3600,) * 2); seen = []; real_same = d.same_bytes
+def spying(a, b, tick=None): seen.extend(sorted((json.load(open(os.path.join(d.LOCK_DIR, n)))["app"], json.load(open(os.path.join(d.LOCK_DIR, n)))["path"]) for n in os.listdir(d.LOCK_DIR))); return real_same(a, b, tick)
+d.same_bytes = spying; code, obj = d.relink_fix(c, v, ["x"]); d.same_bytes = real_same
+check("lock: a marker older than six hours is taken over, and during the comparison both files carry this app's marker", code == 200 and seen == sorted([("Dedupearr", LK), ("Dedupearr", LL)]) and os.lstat(LK).st_ino == inos[LL], (code, obj, seen))
+check("lock: when the fix is done every marker is gone", os.listdir(d.LOCK_DIR) == [] and not d._LOCKS, os.listdir(d.LOCK_DIR))
+hid = next(h["id"] for h in d.holding(c)["items"] if h["orig"] == LK); m = theirs(LL); code, obj = d.restore_held(c, hid)
+check("lock: Put back after a relink waits while Auditarr holds the library file the old name points at", code == 409 and "Auditarr is working on this file" in obj["error"] and os.lstat(LK).st_ino == inos[LL], (code, obj))
+os.remove(m); m = theirs(LO, app="Dedupearr"); code, obj = d.hold_file(c, LO, "bin", "test")
+check("lock: a marker this app left behind before a restart does not block it", code == 200 and not os.path.exists(LO) and os.listdir(d.LOCK_DIR) == [], (code, obj))
+a = theirs(LL, app="Dedupearr"); n = d.lock_sweep(); check("lock: start-up clears this app's old markers", n == 1 and not os.path.exists(a))
+real_dir = d.LOCK_DIR; d.LOCK_DIR = os.path.join(TMP, "nowhere", "deeper", ".fix-locks"); code, obj = d.restore_held(c, hid); d.LOCK_DIR = real_dir
+check("lock: with no place for the lock folder a fix runs as before and nothing is created", code == 200 and os.lstat(LK).st_ino == inos[LK] and not os.path.exists(os.path.join(TMP, "nowhere")), (code, obj))
+d.scan(now=now); check("lock: the scan never lists the lock folder", not any(".fix-locks" in i["path"] for i in d.state(c)["items"]))
+d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)

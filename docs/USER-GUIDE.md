@@ -90,6 +90,10 @@ One scan at `SCAN_TIME` (04:30 by default), and one at start when the last scan 
 
 A fix never deletes. It moves the file to `HOLDING_DIR` (by default `.dedupearr-holding` at the top of your first scan folder), under the day it went and its full old path, so you can always see where it came from. The move is a rename inside the same share: instant, no copying, no extra space. Dedupearr refuses the move when the file changed since the scan, when the bin would be on another disk, or when the share is mounted read-only (the default template mounts it read-only; switch the **Data** path to read-write before you turn fixes on). The scan never counts the holding bin as library or downloads.
 
+## 🔒 Sharing the files with Auditarr
+
+Auditarr rewrites files (rewrap, track labels, time bar) and Dedupearr moves them. So that the two never touch one file at the same moment, each leaves a small marker in a `.fix-locks` folder at the top of your media share while it works, and removes it when it is done. If you press a fix on a file Auditarr is busy with, nothing is changed and the answer says so: wait a few minutes and press again. **Move all shown** leaves such a file alone and moves the rest. A marker older than 6 hours is ignored, so a crash never blocks a file for good. Both apps must see the same folder; with the default folders they do, otherwise set `LOCK_DIR` in both.
+
 ## 💬 Frequently asked
 
 **Why is almost everything "Stored twice"?** Your arr copies instead of hardlinking, usually because the library and the download folder are two different mounts in the arr's container. The fix is one share with two folders, as the arr guides describe. Dedupearr phase 2 will name the cause on the row.

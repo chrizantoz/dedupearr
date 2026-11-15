@@ -628,6 +628,71 @@ def plan_fix(v):
 def record_action(c, mode, kind, path, detail, result, undo=None):
     c.execute("INSERT INTO action(ts,mode,kind,path,detail,result,undo) VALUES(?,?,?,?,?,?,?)", (time.time(), mode, kind, path, detail[:500], result[:500], json.dumps(undo) if undo else None)); c.commit()
 
+# ------------------------------------------------------------------- the lock shared with Auditarr (P3.5): one marker per file, in a folder both apps can see
+LOCK_DIR = _env("LOCK_DIR") or (SCAN_ROOTS[0].rstrip("/") + "/.fix-locks"); LOCK_STALE_H = float(_env("LOCK_STALE_H", "6") or 6); LOCK_APP = "Dedupearr"
+_LOCKS = {}; _LOCKS_GUARD = threading.Lock()   # marker -> how many times this app holds it right now
+class FileBusy(RuntimeError): pass
+def _lock_marker(path):
+    """The marker is named after the file's number on the disk (its inode), not its name: two names of one file share one lock, and the two
+    apps need not see the media under the same folder names."""
+    try: return os.path.join(LOCK_DIR, f"{os.stat(path).st_ino}.lock")
+    except (OSError, TypeError): return None
+def _lock_read(marker):
+    """(what the marker says, its age in seconds), or (None, 0) when there is no marker. A marker still being written reads as {}."""
+    try: age = time.time() - os.stat(marker).st_mtime
+    except OSError: return None, 0
+    try:
+        with open(marker) as fh: info = json.load(fh)
+    except (OSError, ValueError): info = {}
+    return (info if isinstance(info, dict) else {}), age
+def _lock_theirs(info, age): return info is not None and age <= LOCK_STALE_H * 3600 and info.get("app") != LOCK_APP
+def _lock_sentence(info): return f"{info.get('app') or 'Another app'} is working on this file right now ({info.get('what') or 'changing it'}), so nothing was changed; try again in a few minutes"
+def lock_holder(path):
+    """A sentence naming the other app that is changing this file right now, or '' when nobody is."""
+    marker = _lock_marker(path)
+    if not marker: return ""
+    info, age = _lock_read(marker)
+    return _lock_sentence(info) if _lock_theirs(info, age) else ""
+def lock_take(path, what):
+    """Mark the file as being changed by this app. Returns a token for lock_drop; raises FileBusy when the other app holds it.
+    No lock folder (or a read-only one) means no lock: the fix runs as it did before."""
+    marker = _lock_marker(path)
+    if not marker: return None
+    with _LOCKS_GUARD:
+        if _LOCKS.get(marker): _LOCKS[marker] += 1; return marker
+        for _ in (0, 1):
+            try:
+                if not os.path.isdir(LOCK_DIR): os.mkdir(LOCK_DIR)
+                fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            except FileExistsError:
+                info, age = _lock_read(marker)
+                if _lock_theirs(info, age): raise FileBusy(_lock_sentence(info)) from None
+                try: os.remove(marker)   # older than LOCK_STALE_H hours, or left behind by this app before a restart
+                except OSError: pass
+                continue
+            except OSError: return None
+            with os.fdopen(fd, "w") as fh: json.dump(dict(app=LOCK_APP, what=what, path=path, since=time.time()), fh)
+            _LOCKS[marker] = 1; return marker
+    raise FileBusy("Another app took this file at the same moment, so nothing was changed; try again in a minute")
+def lock_drop(marker):
+    if not marker: return
+    with _LOCKS_GUARD:
+        n = _LOCKS.get(marker, 0) - 1
+        if n > 0: _LOCKS[marker] = n; return
+        _LOCKS.pop(marker, None)
+        try: os.remove(marker)
+        except OSError: pass
+def lock_sweep():
+    """At start-up: markers this app left behind when it was stopped mean nothing any more."""
+    try: names = os.listdir(LOCK_DIR)
+    except OSError: return 0
+    n = 0
+    for name in names:
+        m = os.path.join(LOCK_DIR, name); info, age = _lock_read(m)
+        if name.endswith(".lock") and info is not None and (info.get("app") == LOCK_APP or age > LOCK_STALE_H * 3600):
+            try: os.remove(m); n += 1
+            except OSError: pass
+    return n
 # ------------------------------------------------------------------------------------------------------- holding bin (P3.1)
 READ_ONLY_NOTE = "Dedupearr can only read your media folder (it is mounted read-only), so nothing was moved. To let fixes move files, mount the share read-write; dry runs work either way."
 def hold_target(path, now):
@@ -636,7 +701,13 @@ def hold_target(path, now):
 def under_roots(path):
     n = os.path.normpath(path); return any(n.startswith(os.path.normpath(r) + os.sep) for r in SCAN_ROOTS) and not n.startswith(os.path.normpath(HOLDING_DIR) + os.sep)
 def hold_file(c, path, kind, why, now=None):
-    """Move one file into the holding bin after checking it is still the file the scan judged. Returns (code, obj). Nothing is ever deleted here."""
+    """Move one file into the holding bin after checking it is still the file the scan judged. Returns (code, obj). Nothing is ever deleted here.
+    Refused while Auditarr is changing the same file."""
+    try: tok = lock_take(path, "moving it to the holding bin")
+    except FileBusy as e: return 409, {"error": str(e)}
+    try: return _hold_file(c, path, kind, why, now)
+    finally: lock_drop(tok)
+def _hold_file(c, path, kind, why, now=None):
     now = now or time.time()
     if not under_roots(path): return 400, {"error": "that file is outside the folders Dedupearr scans"}
     f = c.execute("SELECT path, dev, ino, size FROM file WHERE path=?", (path,)).fetchone()   # only a file the scan itself recorded, and from here on the recorded path (CodeQL #3-#8)
@@ -663,7 +734,14 @@ def hold_file(c, path, kind, why, now=None):
 def stat_regular(st):
     import stat as _st; return _st.S_ISREG(st.st_mode)
 def restore_held(c, hid):
-    """Put a held file back where it was. Refuses when its old place is taken or the file in the bin is not the one that went in."""
+    """Put a held file back where it was. Refuses when its old place is taken or the file in the bin is not the one that went in,
+    or while Auditarr is changing the file that sits at its old place (after a relink that is the library file)."""
+    r = c.execute("SELECT orig FROM held WHERE id=?", (hid,)).fetchone()
+    try: tok = lock_take(r["orig"], "putting a file back from the holding bin") if r else None
+    except FileBusy as e: return 409, {"error": str(e)}
+    try: return _restore_held(c, hid)
+    finally: lock_drop(tok)
+def _restore_held(c, hid):
     r = c.execute("SELECT * FROM held WHERE id=?", (hid,)).fetchone()
     if not r: return 404, {"error": "nothing like that in the holding bin"}
     if r["restored"]: return 409, {"error": "already put back"}
@@ -775,7 +853,16 @@ def same_bytes(a, b, tick=None):
             if tick: tick(len(x))
 def relink_fix(c, v, steps, now=None, tick=None):
     """P3.3: the download is a second copy of a library file. Compare every byte, move the copy to the holding bin, put a hardlink to the library
-    file at its name (the client keeps seeding the same bytes), check the two names are one file. Any failure puts the copy back. Returns (code, obj)."""
+    file at its name (the client keeps seeding the same bytes), check the two names are one file. Any failure puts the copy back. Returns (code, obj).
+    Both files stay locked for the whole fix, so Auditarr never rewrites the library file while it is being compared and linked."""
+    toks = []
+    try:
+        for p in (v["path"], v.get("twin") or ""): toks.append(lock_take(p, "making two copies one file"))
+        return _relink_fix(c, v, steps, now, tick)
+    except FileBusy as e: return 409, {"error": str(e)}
+    finally:
+        for t in toks: lock_drop(t)
+def _relink_fix(c, v, steps, now=None, tick=None):
     path, twin = v["path"], v.get("twin") or ""; ci = json.loads(v["client"]) if isinstance(v.get("client"), str) and v["client"] else (v.get("client") or None)
     if ci and not ci.get("finished"): return 409, {"error": "the client is still downloading this file, so nothing was changed"}
     rows = {r["path"]: r for r in c.execute("SELECT path, dev, ino, size, kind FROM file WHERE path IN (?, ?)", (path, twin))}
@@ -1252,6 +1339,7 @@ def main():
             for code, n in sorted(s["counts"].items(), key=lambda x: -x[1]): print(f"  {LABEL[code]:<26} {n:>6}   {s['wasted_by_h'][code]:>9} wasted")
         return 0 if r else 1
     if a.daemon:
+        lock_sweep()   # markers left from before a restart mean nothing now
         threading.Thread(target=scheduler, daemon=True).start(); serve(); return 0
     ap.print_help(); return 2
 
