@@ -717,6 +717,25 @@ def client_remove(ci):
     elif ci["client"] == "qBittorrent":
         base, cj = qbit_session(); http_json(base + "/torrents/delete", {"hashes": ci["id"], "deleteFiles": "false"}, cj=cj, form=True)
     else: raise RuntimeError(f"no remove call for {ci['client']}")
+PACK_HOLD = {"DUPLICATE_HEADER", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "DUPLICATE_COPY"}   # files of a torrent that go to the holding bin when the whole torrent is removed
+PACK_STAY = {"LINKED_SEED"}   # a second name of a library file: costs nothing, stays where it is
+def pack_plan(rows, ignored=()):
+    """One torrent, many files (a season pack). rows = the verdicts of its files. Returns (paths to hold, how many stay, why not).
+    The torrent may only go as a whole when every one of its files is either a copy the library does not need or a hardlink that costs nothing."""
+    odd = [r for r in rows if r["code"] not in PACK_HOLD | PACK_STAY]
+    if odd: return [], 0, f"its torrent also holds {len(odd)} file{'s' if len(odd) != 1 else ''} the library does not have ({LABEL.get(odd[0]['code'], odd[0]['code']).lower()}); decide {'those' if len(odd) != 1 else 'that one'} first"
+    ign = [r for r in rows if r["path"] in ignored]
+    if ign: return [], 0, f"you chose to ignore {len(ign)} file{'s' if len(ign) != 1 else ''} of its torrent; un-ignore {'them' if len(ign) != 1 else 'it'} to remove the whole torrent"
+    return [r["path"] for r in rows if r["code"] in PACK_HOLD], sum(1 for r in rows if r["code"] in PACK_STAY), ""
+def pack_rows(c, ci):
+    """The verdicts of every scanned file that belongs to the same torrent as ci (as of the last scan)."""
+    if not ci or ci.get("client") not in REMOVE_READERS: return []
+    out = []
+    for r in c.execute("SELECT * FROM verdict WHERE client IS NOT NULL AND client != ''"):
+        try: k = json.loads(r["client"])
+        except ValueError: continue
+        if k.get("client") == ci["client"] and k.get("id") == ci.get("id"): out.append(dict(r))
+    return out
 def remove_fix(c, v, steps, now=None):
     """P3.2: a leftover or second copy whose seeding is done. The file goes to the holding bin first; then the client is told to forget the
     torrent (never its files); if the client refuses, the file goes straight back. Returns (code, obj)."""
@@ -730,8 +749,8 @@ def remove_fix(c, v, steps, now=None):
             cur = mine.get(path) or next(iter(mine.values()))
             if not seeding_done(cur): return 409, {"error": "the client says this torrent is not past your seeding rule any more, so nothing was changed. " + seed_sentence(cur)}
             others = [p for p in mine if p != path and os.path.exists(p) and os.path.getsize(p) >= MIN_SIZE_MB * 1024 * 1024]
-            if others: return 409, {"error": f"this torrent holds {len(others)} other large file(s); removing it would stop seeding those too, so nothing was changed. Fixing a whole torrent at once arrives with 'Fix all with this cause'."}
             torrent = cur
+            if others: return remove_pack(c, v, torrent, [path] + others, why, now)
     code, obj = hold_file(c, path, "remove", why, now)
     if code != 200: return code, obj
     if torrent:
@@ -807,6 +826,30 @@ def relink_job(v, steps):
     finally:
         c.close(); log(f"fix relink -> {code} for {path}")
         FIXING.update(path=None, last={"path": path, "ok": code == 200, "note": obj.get("note") or obj.get("error", ""), "at": time.time()})
+def remove_pack(c, v, torrent, paths, why, now=None):
+    """P3.5: a torrent with several large files (a season pack) goes as a whole or not at all. Every file must be a copy the library does not need
+    or a hardlink; the copies go to the holding bin, then the client forgets the torrent; any failure puts every file back."""
+    rows = {r["path"]: r for r in (dict(x) for x in c.execute(f"SELECT * FROM verdict WHERE path IN ({','.join('?' * len(paths))})", paths))}
+    unknown = [p for p in paths if p not in rows]
+    if unknown: return 409, {"error": f"this torrent holds {len(unknown)} large file(s) the last scan has no verdict for, so nothing was changed; scan again and look at the row once more"}
+    hold, stay, why_not = pack_plan(list(rows.values()), {r["path"] for r in c.execute("SELECT path FROM ignored")})
+    if why_not: return 409, {"error": "Nothing was changed: " + why_not + "."}
+    held = []
+    def back(msg, code):
+        ok = all(restore_held(c, h)[0] == 200 for h in reversed(held))
+        record_action(c, "on", "remove", v["path"], why, msg + ("; every file was put back" if ok else "; some files wait in the holding bin, Put back returns them"))
+        return code, {"error": msg[0].upper() + msg[1:] + ". " + ("Every file is back in its place; nothing was changed." if ok else "Some files wait in the holding bin; Put back (Actions tab) returns them.")}
+    freed = 0
+    for p in hold:
+        code, obj = hold_file(c, p, "remove", f"{rows[p]['code']}: part of the torrent '{torrent['name']}', removed as a whole", now)
+        if code != 200: return back(f"one file of the torrent could not be moved ({obj.get('error', '')})", code)
+        held.append(obj["held_id"]); freed += obj["frees"]
+    try: client_remove(torrent)
+    except Exception as e: return back(f"{torrent['client']} would not remove the torrent ({e})", 502)
+    c.execute(f"UPDATE held SET note=? WHERE id IN ({','.join('?' * len(held))})", [f"its torrent '{torrent['name']}' was removed from {torrent['client']}; Put back returns the file, not the torrent"] + held); c.commit()
+    record_action(c, "on", "remove", v["path"], f"removed the torrent '{torrent['name']}' from {torrent['client']} (files kept)", f"done; {len(held)} files wait in the holding bin" + (f", {stay} linked to the library stayed" if stay else ""))
+    return 200, {"ok": True, "dry_run": False, "held_ids": held, "files": len(held), "frees": freed, "frees_h": human(freed),
+                 "note": f"Removed the torrent from {torrent['client']} and moved its {len(held)} files to the holding bin" + (f"; {stay} that {'are' if stay != 1 else 'is'} linked to the library stayed" if stay else "") + f". {human(freed)} comes back after {HOLD_DAYS} days; Put back (Actions tab) returns each file until then, not the torrent."}
 LIVE_KINDS = {"bin", "remove", "relink", "empty"}   # P3.4 (2026-11-14): old recycle-bin files go to the holding bin like everything else. P3.3 (2026-11-14): relink an identical copy. P3.1: orphans to the holding bin. P3.2 (2026-11-14): remove a leftover or second copy through the client. Relink and emptying the recycle bin stay dry runs until their gates pass
 def ui_fix(c, path, background=False):
     """POST /api/fix: show the plan (dry run) or carry it out (on). Phase 3 ships the 'on' branch fix by fix; until then every call is a dry run."""
@@ -817,6 +860,13 @@ def ui_fix(c, path, background=False):
     v = dict(r); v["removable"] = bool(v.get("removable"))
     kind, steps, frees = plan_fix(v)
     if not kind: return 400, {"error": steps[0]}
+    if kind == "remove":   # a torrent with several files goes as a whole: say so in the plan, and say why not when it cannot
+        ci = json.loads(v["client"]) if v.get("client") else None; pack = pack_rows(c, ci)
+        if len(pack) > 1:
+            hold, stay, why_not = pack_plan(pack, {r["path"] for r in c.execute("SELECT path FROM ignored")})
+            if why_not: return 409, {"error": "Nothing was changed: " + why_not + "."}
+            frees = sum(r["size"] for r in pack if r["path"] in hold)
+            steps = [steps[0], f"Move all {len(hold)} files of this torrent that the library does not need into the holding bin under {HOLDING_DIR} ({human(frees)}; nothing is deleted)."] + ([f"Leave the {stay} file{'s' if stay != 1 else ''} that {'are' if stay != 1 else 'is'} linked to the library where {'they are' if stay != 1 else 'it is'}; {'they cost' if stay != 1 else 'it costs'} no space."] if stay else []) + [steps[-1].replace("Keep it", "Keep them").replace("delete it", "delete them")]
     if FIX_MODE == "off": return 403, {"error": "fixes are switched off (FIX_MODE=off); the plan is still shown on the row"}
     if FIX_MODE == "on" and kind == "relink" and background:
         FIXING.update(path=path, since=time.time(), done=0, total=v.get("size") or 0); threading.Thread(target=relink_job, args=(v, steps), daemon=True).start()
@@ -876,6 +926,17 @@ def state(c):
         v["bulk"] = bool(v["fixable"] and in_bulk(v["fix_kind"], ci))   # may go with 'Move all shown'
         v["wait"] = seed_wait(v.get("client") if isinstance(v.get("client"), dict) else None) if v["needs_you"] and not v["fixable"] and v["code"] in FIXABLE else ""   # why there is no button yet
         items.append(v)
+    packs = {}
+    for v in items:
+        k = v["client"]
+        if k and k.get("client") in REMOVE_READERS: packs.setdefault((k["client"], k.get("id")), []).append(v)
+    for group in packs.values():   # P3.5: a torrent with several files goes as a whole or not at all, and its rows say which
+        if len(group) < 2: continue
+        hold, stay, why_not = pack_plan(group, ignored); size = sum(v["size"] for v in group if v["path"] in hold)
+        for v in group:
+            if v["fix_kind"] != "remove": continue
+            if why_not: v["fixable"] = False; v["fix_kind"] = ""; v["bulk"] = False; v["wait"] = why_not[0].upper() + why_not[1:]
+            else: v["pack"] = {"files": len(hold), "stay": stay, "size_h": human(size)}
     counts, bytes_by = {}, {}
     cats = {k: {"key": k, "label": lab, "files": 0, "needs": 0, "wasted": 0} for k, lab in CATEGORIES}
     for v in items:

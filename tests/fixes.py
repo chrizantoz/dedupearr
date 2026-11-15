@@ -84,7 +84,7 @@ check("the test world has a download whose seeding is done and whose torrent is 
 T.update(ratio=0.1, seeding_time=86400, private=True); code, obj = d.ui_fix(c, scary)
 check("remove: the client is asked again first; a torrent no longer past the rule is left alone", code == 409 and "seeding rule" in obj["error"] and os.path.exists(scary) and "_removed" not in world, (code, obj))
 T.update(T0); T.pop("private", None); big = fake_disk.blob(os.path.join(os.path.dirname(scary), "Scary.Movie.2026.Extras.mkv"), 2, "scary-extras"); T["files"] = T0["files"] + [os.path.basename(big)]; code, obj = d.ui_fix(c, scary)
-check("remove: a torrent that holds another large file is left alone (it would stop seeding that one too)", code == 409 and "other large file" in obj["error"] and os.path.exists(scary) and "_removed" not in world, (code, obj))
+check("remove: a torrent that holds another large file the scan never judged is left alone", code == 409 and "no verdict" in obj["error"] and os.path.exists(scary) and "_removed" not in world, (code, obj))
 os.remove(big); open(big[:-4] + ".nfo", "w").write("release notes"); T["files"] = T0["files"] + [os.path.basename(big)[:-4] + ".nfo"]
 world["_remove_fails"] = True; code, obj = d.ui_fix(c, scary)
 check("remove: when the client refuses, the file goes straight back and nothing is left in the bin", code == 502 and "back in its place" in obj["error"] and os.lstat(scary).st_ino == ino and d.holding(c)["items"] == [] and any(t["id"] == "scary" for t in world["deluge"]), (code, obj))
@@ -156,5 +156,34 @@ code, obj = d.ui_fix(c, P["bin_new"]); check("old bin: a file still inside your 
 code, obj = d.ui_fix(c, P["bin_old"]); check("old bin: the file moves to the holding bin, same file, nothing deleted", code == 200 and not obj["dry_run"] and not os.path.exists(P["bin_old"]) and os.lstat(obj["dest"]).st_ino == ino_b and not any("for good" in s_ for s_ in obj["steps"]), (code, obj))
 hid = next(h["id"] for h in d.holding(c)["items"] if h["orig"] == P["bin_old"]); code, obj = d.restore_held(c, hid)
 check("old bin: Put back returns it to its recycle bin", code == 200 and os.lstat(P["bin_old"]).st_ino == ino_b, (code, obj))
+# ---- P3.5 (2026-11-15): a torrent with several files (a season pack) goes as a whole or not at all
+pk = os.path.join(DATA, "torrents", "tv", "Pack.Show.S01.1080p.BluRay-GRP"); lb = os.path.join(DATA, "media", "tv", "Pack Show", "Season 01")
+E = {k: os.path.join(pk, f"Pack.Show.S01E0{k}.1080p.BluRay-GRP.mkv") for k in (1, 2, 3, 4)}; LB = {k: os.path.join(lb, f"Pack Show - S01E0{k}.mkv") for k in (1, 2, 3)}
+for k in (1, 2): fake_disk.blob(E[k], 4 + k, f"pack-e{k}"); fake_disk.blob(LB[k], 4 + k, f"pack-e{k}")
+with open(LB[1], "r+b") as fh: fh.seek(100); fh.write(b"tagged-in-place")   # E01: stored twice, header differs; E02: stored twice, identical
+fake_disk.blob(LB[3], 3, "pack-e3"); os.link(LB[3], E[3])   # E03: a hardlink, costs nothing
+fake_disk.blob(E[4], 7, "pack-e4-only-copy")   # E04: in no library at all
+TP = {"id": "pack1", "name": "Pack.Show.S01.1080p.BluRay-GRP", "save_path": os.path.join(DATA, "torrents", "tv"), "files": [os.path.relpath(E[k], os.path.join(DATA, "torrents", "tv")) for k in (1, 2, 3, 4)], "state": "Seeding", "ratio": 2.5, "seeding_time": 30 * 86400, "label": "tv"}
+world["deluge"].append(TP); d.scan(now=now); n_rm = len(world["_removed"]); codes = {k: row(E[k])["code"] for k in E}
+check("pack: the test torrent holds a header copy, an identical copy, a hardlink and a file in no library", codes[1] == "DUPLICATE_HEADER" and codes[2] == "DUPLICATE_COPY" and codes[3] == "LINKED_SEED" and codes[4] not in d.PACK_HOLD | d.PACK_STAY, codes)
+check("pack: while one file is in no library the row has no button and says what to decide first", not row(E[1])["fixable"] and "decide that one first" in row(E[1])["wait"], row(E[1]))
+code, obj = d.ui_fix(c, E[1]); check("pack: pressing it anyway changes nothing and tells the client nothing", code == 409 and "decide that one first" in obj["error"] and all(os.path.exists(E[k]) for k in E) and len(world["_removed"]) == n_rm, (code, obj))
+os.remove(E[4]); TP["files"] = TP["files"][:3]; d.scan(now=now); r1 = row(E[1])
+check("pack: once every file is a spare copy or a hardlink, the row offers the whole torrent and counts its files", r1["fixable"] and r1["fix_kind"] == "remove" and r1["pack"] == {"files": 2, "stay": 1, "size_h": d.human(os.path.getsize(E[1]) + os.path.getsize(E[2]))} and not r1["bulk"], r1.get("pack"))
+d.FIX_MODE = "dryrun"; code, obj = d.ui_fix(c, E[1]); d.FIX_MODE = "on"
+check("pack: the dry-run plan names both files to move, the one that stays, and the space", code == 200 and obj["dry_run"] and any("all 2 files" in s_ for s_ in obj["steps"]) and any("linked to the library" in s_ for s_ in obj["steps"]) and obj["frees"] == os.path.getsize(E[1]) + os.path.getsize(E[2]) and all(os.path.exists(E[k]) for k in (1, 2, 3)), obj)
+inos = {k: os.lstat(E[k]).st_ino for k in (1, 2, 3)}
+world["_remove_fails"] = True; code, obj = d.ui_fix(c, E[1]); world.pop("_remove_fails")
+check("pack: when the client refuses, every file goes straight back", code == 502 and "Every file is back" in obj["error"] and all(os.lstat(E[k]).st_ino == inos[k] for k in (1, 2, 3)) and not any(h["orig"] in E.values() for h in d.holding(c)["items"]), (code, obj))
+d.scan(now=now)
+with open(E[2], "ab") as fh: fh.write(b"grown since the scan")
+code, obj = d.ui_fix(c, E[1]); check("pack: when a later file cannot be moved, the files already moved go back and the torrent stays in the client", code == 409 and os.lstat(E[1]).st_ino == inos[1] and len(world["_removed"]) == n_rm and not any(h["orig"] in E.values() for h in d.holding(c)["items"]), (code, obj))
+with open(E[2], "r+b") as fh: fh.truncate(os.path.getsize(E[2]) - len(b"grown since the scan"))
+d.scan(now=now); c.execute("INSERT INTO ignored(path, at) VALUES(?, ?)", (E[2], now)); c.commit(); code, obj = d.ui_fix(c, E[1])
+check("pack: a file of the torrent you chose to ignore keeps the whole torrent", code == 409 and "ignore" in obj["error"] and os.path.exists(E[1]) and not row(E[1])["fixable"], (code, obj)); c.execute("DELETE FROM ignored WHERE path=?", (E[2],)); c.commit()
+code, obj = d.ui_fix(c, E[2] if False else E[1]); held = [h for h in d.holding(c)["items"] if h["orig"] in E.values()]
+check("pack: one press moves both spare copies to the holding bin, leaves the hardlink, and the client forgets the torrent once, files kept", code == 200 and obj["files"] == 2 and not os.path.exists(E[1]) and not os.path.exists(E[2]) and os.lstat(E[3]).st_ino == inos[3] and world["_removed"][n_rm:] == [("pack1", False)] and len(held) == 2, (code, obj, world["_removed"][n_rm:]))
+check("pack: each held file says its torrent is gone, and the note counts files and space", all("torrent" in h["note"] for h in held) and "its 2 files" in obj["note"] and "1 that is linked" in obj["note"], obj.get("note"))
+code, obj = d.restore_held(c, held[0]["id"]); check("pack: Put back returns one file of the pack on its own", code == 200 and os.path.exists(held[0]["orig"]), (code, obj))
 d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)

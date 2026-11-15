@@ -68,6 +68,7 @@ for i in s["items"]: i["bulk"] = bool(i.get("fixable") and i.get("fix_kind") in 
 if sum(1 for i in s["items"] if i["bulk"] and i.get("needs_you")) < 2: raise SystemExit("live world: the base fixtures have fewer than two plain moves for 'Move all shown'")
 # 2026-11-15 (#26): a real name full of brackets and dashes made a selector built from the path spin forever in the bot. The first row a bot presses carries such a name
 nasty = next(i for i in s["items"] if i.get("fixable") and i.get("needs_you") and i.get("fix_kind") != "relink"); nasty["path"] = "/data/torrents/tv/[Grp] Some Show/[Grp] - Some Show -S02E013 (040) [1080p][ABCD1234] - - -.mkv"; nasty["wasted"] = max(i.get("wasted", 0) for i in s["items"]) + 1; s["items"].sort(key=lambda i: -i.get("wasted", 0))
+pk = next(i for i in s["items"] if i.get("fixable") and i.get("fix_kind") == "remove" and (i.get("client") or {}).get("client") == "Deluge"); pk["pack"] = {"files": 3, "stay": 1, "size_h": "12 GB"}   # P3.5: a season pack goes as a whole
 rl = next((i for i in s["items"] if i.get("fixable") and i.get("fix_kind") == "relink"), None)
 if not rl: raise SystemExit("live world: the base fixtures have no identical copy to relink")
 write("live", e)
