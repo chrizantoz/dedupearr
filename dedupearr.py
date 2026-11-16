@@ -65,6 +65,10 @@ CLIENTS = {"Deluge": {"url": _env("DELUGE_URL").rstrip("/"), "password": _env("D
 SEED_MIN_RATIO = float(_env("SEED_MIN_RATIO", "1.0") or 1.0); SEED_MIN_DAYS = float(_env("SEED_MIN_DAYS", "14") or 14)
 SEED_RULE = _env("SEED_RULE", "auto").lower()   # "auto" (default): private torrents need ratio AND days, public ones either; "both" / "either" for every torrent
 CLIENT_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("CLIENT_PATH_MAP").split(",") if "=" in x]   # clientpath=ourpath when a client sees the files under another path
+AUDITARR_URL = _env("AUDITARR_URL").rstrip("/")   # P2.4: Auditarr's address; Dedupearr reads which files Auditarr changed and where its trash is
+AUDITARR_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("AUDITARR_PATH_MAP").split(",") if "=" in x]   # auditarrpath=ourpath when Auditarr sees the files under another path
+AUDITARR_TRASH_NAMES = {".media-audit-trash", ".auditarr-trash"}   # Auditarr's trash folder by name, for when no address is set
+AUDITARR_STATUS = {}   # {"ok": bool, "n": int, "note": str} after a scan asked; shown on About
 CLIENT_STATUS = {}   # "Deluge" -> {"ok": bool, "n": int, "note": str}; shown on About
 
 def map_client_path(p):
@@ -244,6 +248,35 @@ def queue_for(path, queue):
         d = os.path.dirname(d)
     return None
 
+def map_auditarr_path(p):
+    for a, b in AUDITARR_PATH_MAP:
+        if p.startswith(a): return b.rstrip("/") + p[len(a.rstrip("/")):]
+    return p
+def read_auditarr():
+    """Auditarr's own list (its /api/changed): the files it changed, with when and what in plain words, and where its trash is.
+    -> {"files": {path: (ts, what)}, "trash": [folder]}. An Auditarr that does not answer leaves both empty and is reported on About."""
+    out = {"files": {}, "trash": []}
+    if not AUDITARR_URL: AUDITARR_STATUS.clear(); return out
+    try:
+        j = http_json(AUDITARR_URL + "/api/changed")
+        if not isinstance(j, dict) or not isinstance(j.get("files"), list): raise ValueError("not Auditarr's list of changed files (an older Auditarr, or a sign-in page)")
+        for row in j["files"]:
+            if isinstance(row, list) and len(row) == 3 and isinstance(row[0], str): out["files"][map_auditarr_path(row[0])] = (float(row[1] or 0), re.sub(r"[^\w ,.'-]", " ", str(row[2]))[:80])
+        if isinstance(j.get("trash_dir"), str) and j["trash_dir"].startswith("/"): out["trash"] = [map_auditarr_path(j["trash_dir"]).rstrip("/")]
+        AUDITARR_STATUS.clear(); AUDITARR_STATUS.update(ok=True, n=len(out["files"]), note=f"{len(out['files'])} files it changed are known")
+    except Exception as e:
+        AUDITARR_STATUS.clear(); AUDITARR_STATUS.update(ok=False, n=0, note=str(e)[:160]); note_error(f"Auditarr: {e}")
+    return out
+def in_auditarr_trash(path, trash=()):
+    return any(path.startswith(t + "/") for t in trash) or any(part in AUDITARR_TRASH_NAMES for part in path.split("/")[:-1])
+def auditarr_status():
+    if AUDITARR_STATUS or not AUDITARR_URL: return AUDITARR_STATUS
+    try:
+        c = db(); saved = kv_get(c, "auditarr_status"); c.close()
+        if saved: AUDITARR_STATUS.update(json.loads(saved))
+    except Exception: pass
+    return AUDITARR_STATUS
+
 def gather_context():
     """Ask every configured client and arr once per scan. A client that fails is reported on About and simply leaves its files unexplained."""
     clients = {}
@@ -251,9 +284,9 @@ def gather_context():
         if not CLIENTS[name]["url"]: CLIENT_STATUS.pop(name, None); continue
         try: clients.update(fn())
         except Exception as e: CLIENT_STATUS[name] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{name}: {e}")
-    ctx = {"clients": clients, "imports": read_arr_imports(), "queue": read_arr_queue(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS)}
+    ctx = {"clients": clients, "imports": read_arr_imports(), "queue": read_arr_queue(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS), "auditarr": read_auditarr()}
     try:   # remembered across restarts, so the page and About stay consistent until the next scan asks again
-        c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); c.close()
+        c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); kv_set(c, "auditarr_status", json.dumps(AUDITARR_STATUS)); c.close()
     except Exception as e: log(f"could not remember the client status: {e}")
     return ctx
 
@@ -331,7 +364,7 @@ def db():
     """)
     if "link_ino" not in {r[1] for r in c.execute("PRAGMA table_info(held)")}: c.execute("ALTER TABLE held ADD COLUMN link_ino INTEGER")   # P3.3: the hardlink a relink left at the old place
     cols = {r[1] for r in c.execute("PRAGMA table_info(verdict)")}
-    for col, typ in (("client", "TEXT"), ("removable", "INTEGER"), ("category", "TEXT"), ("queue", "TEXT")):
+    for col, typ in (("client", "TEXT"), ("removable", "INTEGER"), ("category", "TEXT"), ("queue", "TEXT"), ("auditarr", "TEXT")):
         if col not in cols: c.execute(f"ALTER TABLE verdict ADD COLUMN {col} {typ}")
     return c
 
@@ -480,6 +513,14 @@ def judge(c, now, ctx=None):
     extra = {}   # path -> (client info or None, removable)
     extra_q = {}   # path -> what the arr's queue says (#20)
     rows = [dict(r) for r in c.execute("SELECT * FROM file")]
+    aud = ctx.get("auditarr") or {"files": {}, "trash": []}; atrash = set(); extra_a = {}   # P2.4: what Auditarr changed, and its trash (a recycle bin Auditarr empties itself)
+    for r in rows:
+        if in_auditarr_trash(r["path"], aud["trash"]):
+            atrash.add(r["path"])
+            if r["kind"] != "recycle": r["kind"] = "recycle"; c.execute("UPDATE file SET kind='recycle' WHERE path=?", (r["path"],))
+    def by_auditarr(path):
+        a = aud["files"].get(path)
+        return {"what": a[1], "when": datetime.datetime.fromtimestamp(a[0]).strftime("%Y-%m-%d")} if a else None
     groups = {}
     for r in rows: groups.setdefault((r["dev"], r["ino"]), []).append(r)
     verdicts = {}   # path -> (code, kind, size, wasted, twin, evidence)
@@ -519,6 +560,7 @@ def judge(c, now, ctx=None):
                     break
                 if r["size"] > 3 * SAMPLE and s1.split(":")[1:] == s2.split(":")[1:]:   # middle and end identical, only the first megabyte differs: a header edited in place
                     code, twin, ev = "DUPLICATE_HEADER", l["path"], f"inodes {r['ino']} and {l['ino']}, same size {human(r['size'])}, middle and end identical, only the first megabyte differs (a tag or title was edited on one copy)"
+                    if (a := by_auditarr(l["path"])): extra_a[r["path"]] = a; ev += f"; Auditarr changed the library copy on {a['when']} (it {a['what']})"
                     break
                 code, twin, ev = "LOOKALIKE", l["path"], f"same size as {friendly_title(l['path'])} ({human(r['size'])}) but the content differs"
         if code == "DOWNLOAD_UNMATCHED":   # nothing identical, but is there a different release of the same title?
@@ -527,11 +569,13 @@ def judge(c, now, ctx=None):
                 if same_title(k, k2):
                     code, twin, ev = "DOWNLOAD_OTHER_RELEASE", l["path"], f"inode {r['ino']}, link count {r['nlink']}, {human(r['size'])}; the library has a different release of the same title ({human(l['size'])}, inode {l['ino']})"; break
         ci = client_for(r["path"], clients); ai = imports.get(r["path"])
+        if any(m["path"] in atrash for m in groups.get((r["dev"], r["ino"]), [])): ev += "; the library copy it was linked to now sits in Auditarr's trash"
         if code in ("DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LOOKALIKE"):   # a lookalike is only a size coincidence: the client and the arr say what the file really is
             if ai and ai.get("imported"):
                 gone = not os.path.exists(ai["imported"])
                 code, twin = "LEFTOVER", twin or ai["imported"]
                 ev += f"; {ai['app'].capitalize()} imported it on {ai['when']} to {ai['imported']}" + (", and that file has since been replaced" if gone else ", which has since been rewritten (different content now)")
+                if not gone and (a := by_auditarr(ai["imported"])): extra_a[r["path"]] = a; twin = ai["imported"]; ev += f"; Auditarr rewrote it on {a['when']} (it {a['what']})"
             elif (aq := queue_for(r["path"], queue)) and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"):   # #20: finished, and the arr is about to import it (or is stuck)
                 code, twin = "AWAITING_IMPORT", None; ev += f"; {aq['app'].capitalize()} is {IMPORT_WAIT[aq['state']]}" + (f": {aq['why']}" if aq["why"] else ""); extra_q[r["path"]] = aq
             elif ci and not ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"):   # #20: still coming in; neither seeding nor waste yet
@@ -548,6 +592,7 @@ def judge(c, now, ctx=None):
     for r in rows:
         if r["path"] in verdicts: continue
         if r["kind"] == "library": verdicts[r["path"]] = ("LIBRARY_ONLY", "library", r["size"], 0, None, f"inode {r['ino']}, link count {r['nlink']}")
+        elif r["path"] in atrash: verdicts[r["path"]] = ("AUDITARR_BIN", "recycle", r["size"], 0, None, "inside Auditarr's trash folder; Auditarr deletes it for good after its own keep time, or puts it back")
         elif r["kind"] == "recycle":
             days = int((now - r["mtime"]) // 86400)
             old = days > RECYCLE_DAYS
@@ -557,10 +602,10 @@ def judge(c, now, ctx=None):
     seen = set(verdicts)
     for path, (code, kind, size, wasted, twin, ev) in verdicts.items():
         ci, rem = extra.get(path, (None, True)); cat = category_of(path, ctx, twin if code in TWIN_IS_EVIDENCE else None, ci, imports.get(path))
-        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen,client,removable,category,queue) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        c.execute("""INSERT INTO verdict(path,code,title,kind,size,wasted,twin,evidence,first_seen,last_seen,client,removable,category,queue,auditarr) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                      ON CONFLICT(path) DO UPDATE SET code=excluded.code,title=excluded.title,kind=excluded.kind,size=excluded.size,wasted=excluded.wasted,
-                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen,client=excluded.client,removable=excluded.removable,category=excluded.category,queue=excluded.queue""",
-                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now, json.dumps(ci) if ci else None, 1 if rem else 0, cat, json.dumps(extra_q[path]) if path in extra_q else None))
+                     twin=excluded.twin,evidence=excluded.evidence,last_seen=excluded.last_seen,client=excluded.client,removable=excluded.removable,category=excluded.category,queue=excluded.queue,auditarr=excluded.auditarr""",
+                  (path, code, friendly_title(path), kind, size, wasted, twin, ev, now, now, json.dumps(ci) if ci else None, 1 if rem else 0, cat, json.dumps(extra_q[path]) if path in extra_q else None, json.dumps(extra_a[path]) if path in extra_a else None))
     for r in c.execute("SELECT path FROM verdict").fetchall():
         if r["path"] not in seen: c.execute("DELETE FROM verdict WHERE path=?", (r["path"],))
     c.commit()
@@ -570,7 +615,7 @@ def judge(c, now, ctx=None):
 LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": "Two names, one file", "LINKED_SEED": "Seeding name",
          "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match", "DOWNLOAD_OTHER_RELEASE": "Different release in library",
          "LEFTOVER": "Leftover from an upgrade", "ORPHAN": "Orphan", "SEEDING_ONLY": "Seeding only", "DOWNLOADING": "Still downloading", "AWAITING_IMPORT": "Waiting for import",
-         "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "OTHER": "Unsorted folder"}
+         "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "AUDITARR_BIN": "In Auditarr's trash", "OTHER": "Unsorted folder"}
 NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"}
 def seed_sentence(ci):
     if ci is None: return "Nothing holds it, so it can go now."
@@ -583,6 +628,10 @@ def sentence(v):
     t = friendly_title(twin) if twin else ""
     ci = v.get("client") if isinstance(v.get("client"), dict) else (json.loads(v["client"]) if v.get("client") else None)
     tail = (" " + seed_sentence(ci)) if (ci or v.get("clients_known")) else ""
+    au = v.get("auditarr") if isinstance(v.get("auditarr"), dict) else (json.loads(v["auditarr"]) if v.get("auditarr") else None)
+    if code == "AUDITARR_BIN": return "In Auditarr's trash. Auditarr deletes it for good when its own keep time runs out, or puts it back if a re-download fails. Dedupearr leaves it alone and does not count it as library."
+    if code == "LEFTOVER" and au: return f"A leftover: this download was imported into the library, and Auditarr has since rewritten the library file {t} (it {au['what']} on {au['when']}). The library keeps the rewritten file, so this download is only still needed for seeding. {size} to get back.{tail}"
+    if code == "DUPLICATE_HEADER" and au: return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs, because Auditarr changed the library copy (it {au['what']} on {au['when']}). Relinking would not be safe, because the torrent would put the old header back; the download is only still needed for seeding and can go once that is done. {size} to get back.{tail}"
     if code == "LEFTOVER": return f"A leftover from an upgrade: this download was imported into the library and the library has since moved on ({t} is what it keeps now). {size} to get back.{tail}"
     if code == "ORPHAN": return f"An orphan: no download client knows this file and no arr imported it. {size} to get back. Nothing holds it, so it can go now."
     if code == "DOWNLOADING": return f"Still downloading in {ci['client'] if ci else 'your download client'}. Nothing to judge yet; it is looked at again once it finishes."
@@ -1006,6 +1055,7 @@ def state(c):
         v = dict(r); v["clients_known"] = known; v["label"] = LABEL.get(v["code"], v["code"]); v["plain"] = sentence(v); v["size_h"] = human(v["size"]); v["wasted_h"] = human(v["wasted"])
         v["needs_you"] = v["code"] in NEEDS_YOU and v["path"] not in ignored; v["ignored"] = v["path"] in ignored
         v["twin_title"] = friendly_title(v["twin"]) if v["twin"] else None
+        v["auditarr"] = json.loads(v["auditarr"]) if v.get("auditarr") else None
         ci = json.loads(v["client"]) if v.get("client") else None; v["client"] = ci; v["client_text"] = client_text(ci) if (ci or (v["kind"] == "download" and known)) else ""
         v["removable"] = bool(v.get("removable")) and v["needs_you"]
         v["category"] = v.get("category") if v.get("category") in CAT_LABEL else "other"; v["category_label"] = CAT_LABEL[v["category"]]
@@ -1048,7 +1098,7 @@ def state(c):
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
             "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
             "categories": [dict(cc, wasted_h=human(cc["wasted"])) for cc in cats.values() if cc["files"]],
-            "clients": client_status(), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "live_kinds": sorted(LIVE_KINDS), "fixing": dict(FIXING), "holding_dir": HOLDING_DIR, "holding": holding(c), "nightly_bot": nightly_bot()}
+            "clients": client_status(), "auditarr": dict(auditarr_status()), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "live_kinds": sorted(LIVE_KINDS), "fixing": dict(FIXING), "holding_dir": HOLDING_DIR, "holding": holding(c), "nightly_bot": nightly_bot()}
 
 def nightly_bot():
     """The nightly page bot's last report (written by the server's user script into CONFIG_DIR/uibot.json): passed/total/failed, the bot's build and the page's build."""
@@ -1071,6 +1121,8 @@ def about(c):
     errs = errors_recent()
     health.append({"level": "warn", "text": f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours; the newest: {errs[-1]['text'][:120]}"} if errs else {"level": "ok", "text": "No errors in the last 24 hours."})
     for name, st_ in sorted(client_status().items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
+    au = auditarr_status()
+    if au: health.append({"level": "ok", "text": f"Auditarr: {au['note']}; its trash is left alone."} if au["ok"] else {"level": "warn", "text": f"Auditarr could not be read: {au['note']}. Files it changed are explained less precisely until it answers."})
     if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
     elif not client_status() and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
     health.append({"level": "ok", "text": {"off": "Fixes are switched off.", "dryrun": "Fixes run as a dry run: every 'Preview fix' shows the exact steps and nothing is moved, linked or deleted.", "on": "Fixes are on: files move to the holding bin first and can be undone for %d days." % HOLD_DAYS}.get(FIX_MODE, FIX_MODE)})
@@ -1080,7 +1132,7 @@ def about(c):
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
                          "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME,
                          "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "SEED_RULE": SEED_RULE, "CLIENT_PATH_MAP": CLIENT_PATH_MAP, "FIX_MODE": FIX_MODE, "HOLDING_DIR": HOLDING_DIR, "HOLD_DAYS": HOLD_DAYS,
-                         "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}}},
+                         "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}, "Auditarr": AUDITARR_URL or "not set"}},
             "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
 
@@ -1118,7 +1170,7 @@ def digest(c, now=None, hours=26):
         lines.append(f"Holding bin: {_files(len(h['items']))}, {h['bytes_h']}" + (f"; {soon} will be deleted for good within a day" if soon else ""))
     if last and last["note"] != "ok": trouble.append("the last scan failed")
     elif last and now - last["finished"] > 2 * 86400: trouble.append("the last scan is more than two days old")
-    trouble += [f"{name} could not be read" for name, st_ in sorted(s["clients"].items()) if not st_["ok"]]
+    trouble += [f"{name} could not be read" for name, st_ in sorted(s["clients"].items()) if not st_["ok"]] + (["Auditarr could not be read"] if s["auditarr"] and not s["auditarr"]["ok"] else [])
     errs = errors_recent()
     if errs: trouble.append(f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours")
     lines.append("Trouble: " + "; ".join(trouble) if trouble else "No errors since yesterday")

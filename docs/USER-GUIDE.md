@@ -96,6 +96,8 @@ A fix never deletes. It moves the file to `HOLDING_DIR` (by default `.dedupearr-
 
 ## 🔒 Sharing the files with Auditarr
 
+Auditarr changes library files on purpose: it sets default tracks, labels audio and subtitles, and sometimes rewrites a whole file. The download copy of such a file is then no longer identical, and Dedupearr shows it as **Stored twice, header differs** or as a **Leftover**. With Auditarr's address set (`AUDITARR_URL`), the row says so in words: what Auditarr did and on which day. Such a download is only still needed for seeding and can go once your seeding rule is met; it is never relinked, because the torrent would undo Auditarr's change. Files in Auditarr's trash show as **In Auditarr's trash**: Auditarr deletes them for good or puts them back by itself, so Dedupearr leaves them alone and does not count them as library.
+
 Auditarr rewrites files (rewrap, track labels, time bar) and Dedupearr moves them. So that the two never touch one file at the same moment, each leaves a small marker in a `.fix-locks` folder at the top of your media share while it works, and removes it when it is done. If you press a fix on a file Auditarr is busy with, nothing is changed and the answer says so: wait a few minutes and press again. **Move all shown** leaves such a file alone and moves the rest. A marker older than 6 hours is ignored, so a crash never blocks a file for good. Both apps must see the same folder; with the default folders they do, otherwise set `LOCK_DIR` in both.
 
 ## 💬 Frequently asked
