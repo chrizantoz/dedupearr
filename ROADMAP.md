@@ -61,7 +61,7 @@ Why this phase matters on the owner's server (2026-11-12): 357 GB of header-diff
 - 🟢 **P2.7** Kinds of media (owner request 2026-11-12): every file gets a kind (TV shows, Anime, Movies, Adult, Sports, Music, Other) from the arrs' root folders and Sonarr's anime flag first, then the linked library file, the importing arr, the client label and folder names; a kind row under the filters, a tag per row, a per-kind table on Space. Lidarr now read at its v1 API.
 - 🔴 **P2.4** Living next to Auditarr: read Auditarr's actions log; files Auditarr remuxed or rewrote get "rewritten by Auditarr, torrent still needed for seeding" and never a relink offer; Auditarr's `.trash` is a recycle bin.
 - 🔴 **P2.5** Plex reader: which library files Plex actually indexes, so a "library" folder Plex ignores is flagged.
-- 🔴 **P2.6** Phone digest (ntfy): space to get back, what needs you.
+- 🟢 **P2.6** (2026-11-15) Phone digest (ntfy): after the nightly scan one message says what needs you, the space to get back, what can go right now, what moved since yesterday, what waits in the holding bin, and any trouble. Served at `/api/digest` too, where Auditarr reads it so both apps arrive as one message. Gate: `tests/digest.py` (text pinned word for word, mock ntfy, the demo never sends) and three mutants.
 
 ## Phase 3 · Fix safely
 

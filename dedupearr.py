@@ -993,6 +993,7 @@ def ui_fix_all(c, paths):
     if skipped: note += f" {len(skipped)} {'was' if len(skipped) == 1 else 'were'} left alone: {skipped[0]['error']}" + (" (and other reasons; see the Actions tab)" if len({k['error'] for k in skipped}) > 1 else "")
     return 200, {"ok": True, "dry_run": False, "done": done, "frees": freed, "frees_h": human(freed), "skipped": skipped, "note": note}
 
+RECLAIM = ("DUPLICATE_COPY", "DUPLICATE_HEADER", "BIN_OLD", "LEFTOVER", "ORPHAN")   # the kinds counted as "wasted, can come back"
 def actions(c, limit=100):
     return [dict(r) | {"when": datetime.datetime.fromtimestamp(r["ts"]).isoformat(timespec="minutes")} for r in c.execute("SELECT * FROM action ORDER BY ts DESC LIMIT ?", (limit,))]
 
@@ -1036,7 +1037,7 @@ def state(c):
             u = shutil.disk_usage(root); disks.append({"root": root, "total": u.total, "used": u.used, "free": u.free, "total_h": human(u.total), "used_h": human(u.used), "free_h": human(u.free)})
         except OSError: disks.append({"root": root, "missing": True})
     last = c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone()
-    reclaim = sum(bytes_by.get(k, 0) for k in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "BIN_OLD", "LEFTOVER", "ORPHAN")); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0) + bytes_by.get("DOWNLOAD_OTHER_RELEASE", 0)
+    reclaim = sum(bytes_by.get(k, 0) for k in RECLAIM); decide = bytes_by.get("DOWNLOAD_UNMATCHED", 0) + bytes_by.get("DOWNLOAD_OTHER_RELEASE", 0)
     now_bytes = sum(v["wasted"] for v in items if v["removable"] and v["code"] != "DOWNLOAD_UNMATCHED")
     lead = (f"Your library is {human(library_bytes)}. {human(reclaim)} is wasted on second copies, leftovers, orphans and old recycle-bin files"
             + (f", and another {human(decide)} of downloads is still undecided" if decide else "") + "."
@@ -1073,6 +1074,7 @@ def about(c):
     if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
     elif not client_status() and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
     health.append({"level": "ok", "text": {"off": "Fixes are switched off.", "dryrun": "Fixes run as a dry run: every 'Preview fix' shows the exact steps and nothing is moved, linked or deleted.", "on": "Fixes are on: files move to the holding bin first and can be undone for %d days." % HOLD_DAYS}.get(FIX_MODE, FIX_MODE)})
+    if NTFY_URL and DIGEST == "on" and not SANDBOX: health.append({"level": "ok", "text": "A morning message goes to your phone after each nightly scan."})
     if SANDBOX: health.append({"level": "ok", "text": SANDBOX_NOTE})
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
@@ -1081,6 +1083,65 @@ def about(c):
                          "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}}},
             "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
+
+# ------------------------------------------------------------------------------------------------------------------- the morning message (P2.6)
+# One message a day, after the nightly scan: what needs you, how much space can come back, what was moved since yesterday, what waits in the holding bin.
+# It goes to an ntfy topic (NTFY_URL) and is also served at /api/digest, where Auditarr reads it to put both apps in one message.
+NTFY_URL = _env("NTFY_URL"); NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "").strip(); NTFY_TOKEN_FILE = _env("NTFY_TOKEN_FILE"); PUBLIC_URL = _env("PUBLIC_URL").rstrip("/")
+DIGEST = (_env("DIGEST", "on") or "on").lower()
+def _files(n): return f"{n} file{'s' if n != 1 else ''}"
+def digest(c, now=None, hours=26):
+    """The morning message as data: title, lines, text. Reads only; never changes anything."""
+    now = now or time.time(); since = now - hours * 3600; s = state(c); last = s["last_run"]
+    needs = [v for v in s["items"] if v["needs_you"]]; back = s["reclaim_bytes"]; lines = []; trouble = []
+    can_go = sum(v["wasted"] for v in needs if v["fixable"] and v["code"] in RECLAIM)   # the part of "to get back" that has a fix button today
+    if not last: lines.append("No scan has run yet.")
+    elif not needs: lines.append("Needs you: nothing")
+    else:
+        lines.append(f"Needs you: {_files(len(needs))}, {human(back)} to get back")
+        kinds = {}
+        for v in needs: k = kinds.setdefault(v["label"], [0, 0]); k[0] += 1; k[1] += v["wasted"]
+        top = sorted(kinds.items(), key=lambda kv: (-kv[1][1], -kv[1][0], kv[0]))
+        lines += [f"  - {lab}: {_files(n)}" + (f", {human(b)}" if b else "") for lab, (n, b) in top[:4]]
+        if len(top) > 4: lines.append(f"  ... and {len(top) - 4} more kinds")
+        if can_go: lines.append(f"Can go right now: {human(can_go)}")
+        if s["decide_bytes"]: lines.append(f"Still undecided: {s['decide_h']} of downloads")
+    moved = c.execute("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM held WHERE at >= ?", (since,)).fetchone()
+    put_back = c.execute("SELECT COUNT(*) AS n FROM held WHERE restored >= ?", (since,)).fetchone()["n"]
+    gone = c.execute("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM held WHERE purged >= ?", (since,)).fetchone()
+    did = ([f"{_files(moved['n'])} moved to the holding bin ({human(moved['b'])})"] if moved["n"] else []) + ([f"{put_back} put back"] if put_back else []) \
+        + ([f"{gone['n']} deleted for good ({human(gone['b'])} back)"] if gone["n"] else [])
+    lines.append("Since yesterday: " + (", ".join(did) if did else "nothing was moved"))
+    h = holding(c, now)
+    if h["items"]:
+        soon = sum(1 for i in h["items"] if i["days_left"] <= 1)
+        lines.append(f"Holding bin: {_files(len(h['items']))}, {h['bytes_h']}" + (f"; {soon} will be deleted for good within a day" if soon else ""))
+    if last and last["note"] != "ok": trouble.append("the last scan failed")
+    elif last and now - last["finished"] > 2 * 86400: trouble.append("the last scan is more than two days old")
+    trouble += [f"{name} could not be read" for name, st_ in sorted(s["clients"].items()) if not st_["ok"]]
+    errs = errors_recent()
+    if errs: trouble.append(f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours")
+    lines.append("Trouble: " + "; ".join(trouble) if trouble else "No errors since yesterday")
+    title = f"{APP} daily: " + (f"{len(needs)} need you · {human(back)} to get back" if needs else "nothing needs you")
+    return {"app": APP, "title": title, "lines": lines, "text": "\n".join(lines), "priority": "high" if trouble else "default", "needs": len(needs), "reclaim_bytes": back, "reclaim_h": human(back),
+            "now_bytes": can_go, "decide_bytes": s["decide_bytes"], "trouble": trouble, "click": PUBLIC_URL + "/" if PUBLIC_URL else "", "phone": bool(NTFY_URL) and DIGEST == "on" and not SANDBOX}
+def ntfy(title, body, priority="default", click=""):
+    """Push one message to the ntfy topic. -> True when it was delivered. The public demo never sends."""
+    if not NTFY_URL or SANDBOX: return False
+    headers = {"Title": title.encode("utf-8").decode("latin-1"), "Priority": priority, "Tags": "package"}
+    if click: headers["Click"] = click
+    tok = NTFY_TOKEN
+    if not tok and NTFY_TOKEN_FILE and os.path.exists(NTFY_TOKEN_FILE): tok = open(NTFY_TOKEN_FILE).read().strip()
+    if tok: headers["Authorization"] = "Bearer " + tok
+    try: urllib.request.urlopen(urllib.request.Request(NTFY_URL, body.encode(), headers), timeout=20).read(); return True
+    except Exception as e: note_error(f"the morning message could not be sent: {type(e).__name__}"); return False
+def send_digest(c=None):
+    """After the nightly scan: send the morning message when a topic is set and DIGEST is on."""
+    if not NTFY_URL or DIGEST != "on" or SANDBOX: return False
+    own = c is None; c = c or db()
+    try: d = digest(c); return ntfy(d["title"], d["text"], d["priority"], d["click"])
+    finally:
+        if own: c.close()
 
 # ------------------------------------------------------------------------------------------------------------------- sign-in
 # Off until an account exists: set on the About tab (PBKDF2 hash in the database) or by AUTH_USER/AUTH_PASSWORD on the container
@@ -1218,6 +1279,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if p == "/api/state": return self._json(200, dict(state(c), auth=auth_state(who)))
                 if p == "/api/about": return self._json(200, about(c))
                 if p == "/api/actions": return self._json(200, {"actions": actions(c), "fix_mode": FIX_MODE})
+                if p == "/api/digest": return self._json(200, digest(c))
                 if p == "/health":
                     last = c.execute("SELECT finished, note FROM run ORDER BY id DESC LIMIT 1").fetchone()
                     ok = last and last["note"] == "ok" and time.time() - last["finished"] < 2 * 86400; nb = nightly_bot()
@@ -1324,13 +1386,21 @@ def scheduler():
         time.sleep(max(1, (nxt - now).total_seconds()))
         try: scan()
         except Exception: pass
+        try: send_digest()   # also after a failed scan: the message then says so
+        except Exception as e: note_error("the morning message failed: " + repr(e))
 
 def main():
     ap = argparse.ArgumentParser(description=f"{APP}: {TAGLINE}")
     ap.add_argument("--daemon", action="store_true", help="serve the page and scan on a schedule")
     ap.add_argument("--scan", action="store_true", help="scan once and print the summary")
     ap.add_argument("--json", action="store_true", help="print the full state as JSON after --scan")
+    ap.add_argument("--digest", action="store_true", help="print the morning message; with --send, also push it to NTFY_URL")
+    ap.add_argument("--send", action="store_true", help="with --digest: send it now")
     a = ap.parse_args()
+    if a.digest:
+        c = db(); d = digest(c); print(d["title"] + "\n" + d["text"])
+        if a.send: print("sent" if ntfy(d["title"], d["text"], d["priority"], d["click"]) else "not sent (NTFY_URL is not set, or the topic refused it)")
+        c.close(); return 0
     if a.scan:
         r = scan(); c = db(); s = state(c); c.close()
         if a.json: print(json.dumps(s, indent=1, default=str))

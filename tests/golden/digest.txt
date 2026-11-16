@@ -1,0 +1,12 @@
+Dedupearr daily: 6 need you · 10.5 MB to get back
+Needs you: 6 files, 10.5 MB to get back
+  - Different release in library: 1 file, 6.3 MB
+  - Download without a match: 1 file, 5.2 MB
+  - Stored twice: 1 file, 4.2 MB
+  - Stored twice, header differs: 1 file, 4.2 MB
+  ... and 2 more kinds
+Can go right now: 10.5 MB
+Still undecided: 11.5 MB of downloads
+Since yesterday: 2 files moved to the holding bin (5.2 GB), 1 put back, 1 deleted for good (6 GB back)
+Holding bin: 2 files, 6.2 GB; 1 will be deleted for good within a day
+No errors since yesterday

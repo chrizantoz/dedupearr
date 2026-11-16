@@ -9,6 +9,9 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("header-differs duplicates ignored", 'if r["size"] > 3 * SAMPLE and s1.split(":")[1:] == s2.split(":")[1:]:', 'if False:'),
     ("recycle rule never expires", "old = days > RECYCLE_DAYS", "old = days > 999999"),
     ("waste never counted", 'r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN") else 0', '0'),
+    ("morning message counts ignored files", 'needs = [v for v in s["items"] if v["needs_you"]]; back = s["reclaim_bytes"]', 'needs = list(s["items"]); back = s["reclaim_bytes"]'),
+    ("morning message sent from the public demo", "    if not NTFY_URL or SANDBOX: return False\n    headers", "    if not NTFY_URL: return False\n    headers"),
+    ("morning message hides trouble", 'lines.append("Trouble: " + "; ".join(trouble) if trouble else "No errors since yesterday")', 'lines.append("No errors since yesterday")'),
     ("seeding rule always satisfied", 'return (r_ok or d_ok) if rule_for(ci) == "either" else (r_ok and d_ok)', 'return True'),
     ("seeding rule ignores public torrents", 'return "either" if (ci or {}).get("private") is False else "both"', 'return "both"'),
     ("same-title leftovers never noticed", 'if same_title(k, k2):', 'if False:'),
@@ -49,7 +52,7 @@ for name, old, new in todo:
     tmp = tempfile.mkdtemp(prefix="dedupearr-mut-")
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(tmp, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     open(os.path.join(tmp, "dedupearr.py"), "w").write(src.replace(old, new, 1))
-    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else [])
+    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else []) + ([os.path.join(tmp, "tests", "digest.py")] if "morning message" in name else [])
     caught = any(subprocess.run([sys.executable, t], capture_output=True, text=True, timeout=600).returncode != 0 for t in suites)
     p = subprocess.run([sys.executable, suites[-1]], capture_output=True, text=True, timeout=600) if not caught else subprocess.CompletedProcess([], 1, "", "")
     print(f"{'PASS' if caught else 'FAIL'} mutant '{name}': {'caught by the suite' if caught else 'SURVIVED - the suite did not notice'}  ({[l for l in p.stdout.splitlines() if l.startswith('FAIL')][:2]})")

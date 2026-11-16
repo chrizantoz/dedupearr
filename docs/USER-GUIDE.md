@@ -86,6 +86,10 @@ That is all of them.
 
 One scan at `SCAN_TIME` (04:30 by default), and one at start when the last scan is more than 20 hours old. A scan lists every video file, groups the names that share an inode, compares same-size library and download files by checksum, judges the recycle bins, and writes the verdicts. Checksums are remembered per file, so a file is hashed once in its life. Nothing is moved, linked or deleted, with one exception: files that have waited `HOLD_DAYS` (14 by default) in the holding bin are deleted at the start of the scan, and only if the file there is still the one that went in.
 
+## 📱 The morning message
+
+With an [ntfy](https://ntfy.sh) topic set (`NTFY_URL`), Dedupearr sends one message to your phone after the nightly scan. It says how many files need you and how much space can come back, which kinds are the biggest, how much can go right now, what was moved, put back or deleted for good since yesterday, and what waits in the holding bin. The last line is either "No errors since yesterday" or the trouble by name: a failed scan, a download client that could not be read, errors. If you also run Auditarr, set Dedupearr's address in Auditarr's settings instead: its daily message then carries Dedupearr's lines too, and your phone gets one message, not two.
+
 ## 🧺 The holding bin
 
 A fix never deletes. It moves the file to `HOLDING_DIR` (by default `.dedupearr-holding` at the top of your first scan folder), under the day it went and its full old path, so you can always see where it came from. The move is a rename inside the same share: instant, no copying, no extra space. Dedupearr refuses the move when the file changed since the scan, when the bin would be on another disk, or when the share is mounted read-only (the default template mounts it read-only; switch the **Data** path to read-write before you turn fixes on). The scan never counts the holding bin as library or downloads.
