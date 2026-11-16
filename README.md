@@ -18,14 +18,14 @@ It is deliberately small: one Python file, one HTML page, a local SQLite file fo
 
 ## 🚧 Status
 
-**Phase 2 of 4, still read-only.** Dedupearr looks and tells; it moves, links and deletes nothing. It was built on one homelab (about 15,000 files and 38 TB across Sonarr, Radarr and qBittorrent on Unraid) and its first real scan already found 370 GB of second copies. The next phases add the download-client and arr readers, then the fixes behind a dry run and a 14-day undo. The [roadmap](ROADMAP.md) has the detail.
+**Phase 3 of 4: it can fix what it finds, and every fix can be undone** (as of 2026-11-16). Dedupearr scans, asks your download clients and arrs, and offers a button on the rows it is sure about. Fixes are a dry run until you turn them on (`FIX_MODE=on`); then a file moves to a holding bin first and can be put back for 14 days. It was built on one homelab (about 15,000 files and 35 TB across Sonarr, Radarr, Deluge and NZBGet on Unraid), where it reports about 500 GB that can come back. What is still open before phase 4: 30 nights in a row without a wrong fix. The [roadmap](ROADMAP.md) has the detail.
 
 | Phase | What it does | Status |
 | --- | --- | --- |
 | 1 · Scan and tell | Disk scan (inode, link count, size, checksum), verdicts, Files and Space pages, nightly scan | done |
-| 2 · Ask the apps | Deluge, NZBGet, qBittorrent and the arrs' import history: a download becomes *leftover*, *orphan* or *seeding only*, with your seeding rule saying what can go now | **this release** (rTorrent, Transmission, SABnzbd to come) |
-| 3 · Fix safely | Relink, remove the old torrent, empty the bin: dry run first, holding bin, 14-day undo | after 2 |
-| 4 · Easy to install | Setup wizard with the shared-mount test, Unraid cache/array awareness, Unraid Apps, public demo | after 3 |
+| 2 · Ask the apps | Deluge, NZBGet, qBittorrent and the arrs' import history: a download becomes *leftover*, *orphan* or *seeding only*, with your seeding rule saying what can go now. A morning message for your phone. Living next to Auditarr: rows say what Auditarr changed, and its trash is left alone | done (rTorrent, Transmission, SABnzbd and a Plex reader to come) |
+| 3 · Fix safely | Relink an identical copy, remove a finished torrent through the client (a whole season pack at once), move orphans and old bin files: dry run first, holding bin, 14-day undo, a lock shared with Auditarr | **built and live**; the 30-night gate is running |
+| 4 · Easy to install | Setup wizard with the shared-mount test, Unraid cache/array awareness, Unraid Apps listing | next (the public demo and the Unraid template already exist) |
 
 ## 🖼️ Screenshots
 
@@ -68,9 +68,9 @@ The fake disk holds one of every situation: a real hardlink, an identical second
 
 ## How it works in three steps
 
-1. 🔗 **Mount** the share that holds your library and your downloads, read-only, and start the container.
+1. 🔗 **Mount** the share that holds your library and your downloads and start the container (read-only is enough to look; fixes need it writable).
 2. 🌙 **It scans every night** (and once at start): 15,000 files take under a minute. Checksums run only on files that look like copies and are remembered, so a file is hashed once in its life.
-3. 👀 **You read one sentence per file**: *Stored twice: the library file Dune Part Two 2024 and this download are two separate files with identical content. Making them one file again would free 48.2 GB.* In phase 1 you act on it yourself; phase 3 adds the button.
+3. 👀 **You read one sentence per file**: *Stored twice: the library file Dune Part Two 2024 and this download are two separate files with identical content. Making them one file again would free 48.2 GB.* With fixes on, the row carries the button.
 
 ### What it runs on
 
@@ -102,11 +102,13 @@ Out of the box the page is open to whoever can reach the port, which at home mea
 - **No sign-in at home, sign-in through your domain:** tick **No sign-in on my own network** under the password (or set `LOCAL_NO_LOGIN=1`). A browser on your own network (or tailnet) that opens the address and port directly gets straight in; anything that arrives through a reverse proxy, tunnel or CDN (it adds `X-Forwarded-For` or a similar header) is always asked, even though the proxy itself sits on your network. Leave it off if your router forwards the port straight to Dedupearr: some routers make every outside visitor look like they are at home.
 - **Already behind Authelia or Authentik:** `TRUST_PROXY_AUTH=1` lets their `Remote-User` header count as the sign-in, so you log in once.
 
-## 🛡️ Is it safe? (yes: phase 1 changes nothing)
+## 🛡️ Is it safe? (yes: nothing is deleted outright)
 
-- **Read-only, by construction.** The container mounts your media read-only (`:ro`) and the code has no code path that moves, links or deletes a file. The banner on the page says so.
-- **Verdicts need evidence.** A hardlink is a shared inode across the library and the download folder. "Stored twice" needs identical content, confirmed by checksum. "Looks alike" is a same-size file whose content differs, and it is never called waste.
-- **When the fixes come (phase 3)** they follow Auditarr's rules: dry run on by default, files move to a holding bin instead of being deleted, 14 days of one-click undo, and a verdict that is unsure gets no button.
+- **A dry run until you say otherwise.** Out of the box every **Preview fix** shows the exact steps and nothing is moved, linked or deleted. Mount your media read-only (`:ro`) and that is guaranteed by the system, not only by the code.
+- **With fixes on, a file moves before it goes.** Every fix moves the file to a holding bin first. **Put back** undoes it for 14 days; only then is it deleted.
+- **Verdicts need evidence.** A hardlink is a shared inode across the library and the download folder. "Stored twice" needs identical content, confirmed by checksum, and a relink compares every byte again right before the change. "Looks alike" is a same-size file whose content differs, and it is never called waste.
+- **Your seeding rule decides.** A torrent is removed only once it is past your ratio and days, and the client is asked again right before the change. A verdict that is unsure gets no button.
+- **It never fights Auditarr.** While one app changes a file the other leaves it alone, and Auditarr's trash is never touched.
 
 ## ⚙️ Settings
 

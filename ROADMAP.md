@@ -4,6 +4,13 @@ Markers: 🟢 done · 🟡 in progress · 🔴 not started · 🙋 owner step. O
 
 Proposal and research: the owner's doc "Dedupearr: the truth about your storage"; screen mockups on the "Dedupearr Mockups" canvas. Auditarr's own roadmap lists this app as N1–N4.
 
+## 📍 Where we are (2026-11-16)
+
+- **Done and live:** phase 1 (scan and tell), phase 2 except the extra clients, and all of phase 3's fixes: holding bin with 14-day undo, relink, removal through the client (whole torrents too), the lock shared with Auditarr, the morning message, and living next to Auditarr.
+- **Running by itself:** the gate to phase 4 (P3.6), 30 nights without a wrong fix.
+- **Next to build:** phase 4, the setup wizard (P4.1) and the Community Apps listing.
+- **Open, smaller:** rTorrent and Transmission readers (P2.3), a Plex reader (P2.5), a settings page (P1.7), title matching across languages (P1.12).
+
 ## 🗂️ How we track work (added 2026-11-12)
 
 - **This file** is the big picture: phases, what is done, what is next, in plain words.
@@ -42,7 +49,7 @@ Each line: the pattern → the guard that stops it now → the idea it left for 
 - 🟢 **P1.4** Nightly scan at `SCAN_TIME`, a scan at start when the last one is old, Scan now button, `/health` 503 when stale.
 - 🟢 **P1.5** Tests, level with Auditarr (see docs/TESTING.md): ruff + pyflakes, fake disk with every situation, verdict tests, plain-language tests, API contract test that records the UI fixtures, random-disk fuzzer with invariants, chaos (unlistable/unreadable/missing/broken), mutation check (8 mutants, all caught), performance budget (60k files), jsdom UI bot, data fuzzer, five edge worlds, bot lints, real-browser bot with personas and screenshots, Trivy; errors tracked for the About page.
 - 🟢 **P1.6** First real-library run on the owner's server (read-only) 2026-11-11: 15,114 files, 37.6 TB, 43 s; 476 hardlinked pairs, 1 identical copy (12.5 GB), 73 pairs identical except the first megabyte (Auditarr's in-place language tags; became the "Stored twice, header differs" verdict), 77 unmatched downloads (162 GB). Compare the verdicts with reality for two weeks. Gate to phase 2. Done; the nightly scan has run clean since.
-- 🔴 **P1.9** Phase 3 rule learned from P1.6: never relink a header-differs pair (the torrent client would put the old header back over the tagged library file); the fix there is "remove the download when seeding is done".
+- 🟢 **P1.9** (in force since P3.3, 2026-11-14; named per row since P2.4, 2026-11-16) Phase 3 rule learned from P1.6: never relink a header-differs pair (the torrent client would put the old header back over the tagged library file); the fix there is "remove the download when seeding is done".
 - 🟢 **P1.11** (2026-11-12) "Different release in library": an unmatched download whose title and year (movies) or title and episode (shows) match a library file is called a likely leftover and points at the keeper. Found 11 of 77 on the owner's server on the first pass (Scary Movie, Bleach, Mushoku Tensei, Slime, One Piece).
 - 🔴 **P1.12** Title matching cannot bridge a Japanese torrent name and an English library name (Isekai Maou → How Not to Summon a Demon Lord), absolute episode numbers (One Piece EP1177) or fansub names ([MTBB] Mushoku Tensei S3 - 01): those need Sonarr's own mapping, which is P2.2. Extras (NCOP/NCED), ISOs and software in the download folders are not library material and should get their own quiet verdict instead of "to decide".
 - 🔴 **P1.7** Settings page (edit `RECYCLE_DAYS`, hints and dirs from the page); until then they are environment variables.
