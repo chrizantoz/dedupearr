@@ -752,6 +752,10 @@ def under_roots(path):
 def hold_file(c, path, kind, why, now=None):
     """Move one file into the holding bin after checking it is still the file the scan judged. Returns (code, obj). Nothing is ever deleted here.
     Refused while Auditarr is changing the same file."""
+    if not under_roots(path): return 400, {"error": "that file is outside the folders Dedupearr scans"}
+    f = c.execute("SELECT path FROM file WHERE path=?", (path,)).fetchone()   # the lock looks at the disk too, so it only ever gets a path the scan recorded (CodeQL #13)
+    if not f: return 409, {"error": "the last scan has no record of that file, so nothing was moved; scan again and look at the row once more"}
+    path = f["path"]
     try: tok = lock_take(path, "moving it to the holding bin")
     except FileBusy as e: return 409, {"error": str(e)}
     try: return _hold_file(c, path, kind, why, now)

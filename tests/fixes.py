@@ -212,5 +212,15 @@ a = theirs(LL, app="Dedupearr"); n = d.lock_sweep(); check("lock: start-up clear
 real_dir = d.LOCK_DIR; d.LOCK_DIR = os.path.join(TMP, "nowhere", "deeper", ".fix-locks"); code, obj = d.restore_held(c, hid); d.LOCK_DIR = real_dir
 check("lock: with no place for the lock folder a fix runs as before and nothing is created", code == 200 and os.lstat(LK).st_ino == inos[LK] and not os.path.exists(os.path.join(TMP, "nowhere")), (code, obj))
 d.scan(now=now); check("lock: the scan never lists the lock folder", not any(".fix-locks" in i["path"] for i in d.state(c)["items"]))
+# ---- CodeQL #13 (2026-11-16): the lock reads the disk (the file's number), so it must never be handed a path straight from a request.
+# hold_file checks the path against the scanned folders and the scan's own record first; only then does the lock look at the file.
+looked = []; real_marker = d._lock_marker; d._lock_marker = lambda p: (looked.append(p), real_marker(p))[1]
+STRAY = os.path.join(DATA, "movies", "never-scanned.mkv"); fake_disk.blob(STRAY, 2, "never-scanned")
+code1, obj1 = d.hold_file(c, "/etc/hostname", "bin", "test"); code2, obj2 = d.hold_file(c, DATA + "/../../etc/hostname", "bin", "test"); code3, obj3 = d.hold_file(c, STRAY, "bin", "test")
+d._lock_marker = real_marker
+check("lock: a path outside the scanned folders is refused before the lock looks at the disk", code1 == 400 and code2 == 400 and "outside the folders" in obj1["error"], (code1, code2, obj1))
+check("lock: a file the scan never recorded is refused before the lock looks at the disk, and stays where it is", code3 == 409 and "no record of that file" in obj3["error"] and os.path.exists(STRAY), (code3, obj3))
+check("lock: none of those refused paths ever reached the lock", looked == [], looked)
+os.remove(STRAY)
 d.FIX_MODE = "dryrun"
 srv.shutdown(); srv.server_close(); c.close(); bad = results.count(False); print(f"\n{len(results) - bad} passed, {bad} failed"); sys.exit(1 if bad else 0)
