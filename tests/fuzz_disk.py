@@ -40,6 +40,7 @@ for w in range(N):
             if not v["twin"] or files[v["twin"]]["size"] != row["size"]: fail(f"world {w}: {v['code']} twin missing or size differs: {p}")
             if v["code"] == "DUPLICATE_COPY" and open(p, "rb").read() != open(v["twin"], "rb").read(): fail(f"world {w}: DUPLICATE_COPY but content differs: {p}")
             if v["code"] == "LOOKALIKE" and open(p, "rb").read() == open(v["twin"], "rb").read(): fail(f"world {w}: LOOKALIKE but content identical: {p}")
+        if v["code"] == "EXTRA" and (v["wasted"] or row["kind"] != "download" or not d.extra_kind(p)): fail(f"world {w}: EXTRA that is waste, not a download or not an extra by name: {p}")
         if v["code"] == "BIN_OLD" and (now - row["mtime"]) / 86400 <= d.RECYCLE_DAYS: fail(f"world {w}: BIN_OLD within the rule: {p}")
         if v["code"] == "BIN_RECENT" and (now - row["mtime"]) / 86400 > d.RECYCLE_DAYS: fail(f"world {w}: BIN_RECENT past the rule: {p}")
         if v["wasted"] not in (0, row["size"]): fail(f"world {w}: wasted is neither 0 nor the size: {p}")

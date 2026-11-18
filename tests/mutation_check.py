@@ -45,6 +45,7 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("client reader: a switched-off client reported as broken", 'if name in soft:   # switched off in the arr', 'if False:   # switched off in the arr'),
     ("client discovery from the arrs ignored", 'clients = {}; found = read_arr_clients();', 'clients = {}; found = [];'),
     ("remove fix moves a file rTorrent still holds", 'if no_remove_call(ci): return 409, {"error": no_remove_sentence(ci)}', 'if False: return 409, {}'),
+    ("extras called something to decide", 'if code == "DOWNLOAD_UNMATCHED" and not (is_usenet(ci) and ci.get("finished")) and (xk := extra_kind(r["path"])):', 'if False and (xk := ""):'),
     ("remove fix offered for a client it cannot tell", 'if v["fix_kind"] == "remove" and no_remove_call(ci):', 'if False:'),
 ]
 arg = sys.argv[1] if len(sys.argv) > 1 else str(datetime.date.today().timetuple().tm_yday % len(MUTANTS))

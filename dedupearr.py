@@ -22,6 +22,8 @@ Verdict codes (never shown raw; see LABEL and sentence()):
   LEFTOVER           an arr imported this download and the library has since replaced or rewritten that file  wasted size
   ORPHAN             no client knows the file and no arr imported it                                wasted size
   SEEDING_ONLY       a client seeds it and no arr ever imported it (software, extras, kept torrents) wasted 0
+  EXTRA              P1.12: an extra (opening or ending without credits, trailer, sample), a disc image or software in a download folder, with
+                     nothing to say otherwise: not library material, so a quiet verdict instead of "to decide"   wasted 0
   DOWNLOADING        a client is still downloading it                                              wasted 0
   AWAITING_IMPORT    finished, and an arr has it in its queue waiting to import (or blocked)        wasted 0
 Phase 3 (in progress): /api/fix shows the plan for a row (relink, remove through the client, holding bin, empty an old bin). FIX_MODE=dryrun by default:
@@ -358,10 +360,10 @@ def category_of(path, ctx, twin=None, ci=None, ai=None):
 
 def read_arr_imports():
     """What each arr imported from where: dropped path (the download) -> imported path (the library file), newest first."""
-    out = {}
+    out = {}; LAYOUT.clear()
     for app, cfg in ARRS.items():
         if not cfg["url"] or not cfg["key"]: continue
-        H = {"X-Api-Key": cfg["key"]}; n = 0; page = 1
+        H = {"X-Api-Key": cfg["key"]}; n = 0; page = 1; tops = {}
         try:
             while page <= 40:
                 r = http_json(f"{cfg['url']}/api/{api_v(app)}/history?page={page}&pageSize=500&eventType=3&sortKey=date&sortDirection=descending", headers=H)
@@ -369,13 +371,20 @@ def read_arr_imports():
                 for rec in recs:
                     d = rec.get("data") or {}; dropped = map_client_path(d.get("droppedPath") or "")
                     if dropped and dropped not in out: out[dropped] = {"app": app, "imported": d.get("importedPath") or "", "when": str(rec.get("date", ""))[:10], "title": rec.get("sourceTitle", "")}
+                    if isinstance(d.get("droppedPath"), str) and isinstance(d.get("importedPath"), str):   # P4.1: the first folder of each side, as the arr sees them
+                        k = (_top(d["droppedPath"]), _top(d["importedPath"])); tops[k] = tops.get(k, 0) + 1
                 n += len(recs)
                 if len(recs) < 500: break
                 page += 1
             CLIENT_STATUS[app.capitalize()] = {"ok": True, "n": n, "note": f"{n} imports in its history"}
+            if tops: (dl, lib), k = max(tops.items(), key=lambda kv: kv[1]); LAYOUT[app] = {"from": dl, "to": lib, "n": k, "all": sum(tops.values())}
         except Exception as e: CLIENT_STATUS[app.capitalize()] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{app}: {e}")
     return out
 
+LAYOUT = {}   # P4.1: app -> the folders it imports from and to, from its own history (the shared-mount test reads it)
+def _top(p):
+    parts = [x for x in str(p).replace("\\", "/").split("/") if x]
+    return "/" + parts[0] if parts and str(p).startswith("/") else (parts[0] if parts else "")
 IMPORT_WAIT = {"importPending": "waiting to import it", "importing": "importing it right now", "importBlocked": "cannot import it on its own"}
 def read_arr_queue():
     """#20: what each arr is about to import. outputPath (the finished download, mapped) -> {app, state, why, title}. Only waiting/importing/blocked items."""
@@ -447,7 +456,7 @@ def gather_context():
     ctx = {"clients": clients, "imports": read_arr_imports(), "queue": read_arr_queue(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS), "auditarr": read_auditarr()}
     try:   # remembered across restarts, so the page and About stay consistent until the next scan asks again
         c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); kv_set(c, "auditarr_status", json.dumps(AUDITARR_STATUS))
-        kv_set(c, "discovery", json.dumps({"notes": notes, "found": [{k: v for k, v in f.items() if k != "user"} for f in found]})); c.close()
+        kv_set(c, "discovery", json.dumps({"notes": notes, "found": [{k: v for k, v in f.items() if k != "user"} for f in found]})); kv_set(c, "arr_layout", json.dumps(LAYOUT)); c.close()
     except Exception as e: log(f"could not remember the client status: {e}")
     return ctx
 
@@ -588,6 +597,21 @@ def same_title(a, b):
     ta, ea = a.rsplit(" ", 1); tb, eb = b.rsplit(" ", 1)
     if ta != tb: return False
     return ea.startswith("e?") and eb.endswith(ea[2:]) or eb.startswith("e?") and ea.endswith(eb[2:])   # 'E04' without a season matches S01E04
+
+_EXTRA_NAME = re.compile(r"(?i)(?<![a-z])(nc ?op|nc ?ed|creditless|clean ?(opening|ending)|trailers?|teasers?|samples?|featurettes?|behind[ ._-]the[ ._-]scenes|deleted[ ._-]scenes?|making[ ._-]of|bd[ ._-]?menus?)(?![a-z])")
+_EXTRA_DIRS = {"extras", "extra", "featurettes", "trailers", "samples", "sample", "behind the scenes", "deleted scenes", "interviews", "bonus", "creditless", "menus", "nc"}
+_SOFTWARE_DIRS = {"software", "apps", "applications", "programs", "games", "pc games", "roms"}
+def extra_kind(path):
+    """P1.12: what a download is when it is not library material, in a few words; '' when it looks like an episode or a film.
+    'Show - NCOP 01 [BD].mkv' -> 'an opening or ending without credits'; 'x.iso' -> 'a disc image'; a file under 'software/' -> 'software or a game'."""
+    name = os.path.basename(path); segs = [x.lower() for x in path.split("/")[:-1]]
+    m = _EXTRA_NAME.search(os.path.splitext(name)[0])
+    if m and re.match(r"(?i)nc|creditless|clean", m.group(1)): return "an opening or ending without credits"
+    if os.path.splitext(name)[1].lower() == ".iso": return "a disc image"
+    if any(x in _SOFTWARE_DIRS for x in segs): return "software or a game"
+    if m and re.search(r"(?i)\bs\d{1,2}[ ._-]?e\d{1,3}\b", name): m = None   # an episode whose title says 'Trailer' or 'Free Samples' is an episode
+    if m or any(x in _EXTRA_DIRS for x in segs): return "an extra (a trailer, sample, menu or bonus clip)"
+    return ""
 
 def human(n):
     n = float(n or 0)
@@ -757,6 +781,8 @@ def judge(c, now, ctx=None):
                 if code == "LOOKALIKE": code, twin, ev = "DOWNLOAD_UNMATCHED", None, f"inode {r['ino']}, link count {r['nlink']}, same size as a library file but different content"
                 ev += "; no arr ever imported it, and usenet does not seed"
             elif ci and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()): code = "SEEDING_ONLY"; ev += "; no arr ever imported it"
+            if code == "DOWNLOAD_UNMATCHED" and not (is_usenet(ci) and ci.get("finished")) and (xk := extra_kind(r["path"])):   # P1.12: not library material; a finished usenet job stays a decision (it holds space for nothing)
+                code = "EXTRA"; ev += f"; the name says it is {xk}, not something an arr imports"
         if ci or clients_ok: ev += "; " + client_text(ci)
         extra[r["path"]] = (ci, seeding_done(ci))
         verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN") else 0, twin, ev)
@@ -787,6 +813,7 @@ def judge(c, now, ctx=None):
 LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": "Two names, one file", "LINKED_SEED": "Seeding name",
          "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match", "DOWNLOAD_OTHER_RELEASE": "Different release in library",
          "LEFTOVER": "Leftover from an upgrade", "ORPHAN": "Orphan", "SEEDING_ONLY": "Seeding only", "DOWNLOADING": "Still downloading", "AWAITING_IMPORT": "Waiting for import",
+         "EXTRA": "Extra, not library",
          "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "AUDITARR_BIN": "In Auditarr's trash", "OTHER": "Unsorted folder"}
 NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"}
 def seed_sentence(ci):
@@ -811,7 +838,8 @@ def sentence(v):
         aq = v.get("queue") if isinstance(v.get("queue"), dict) else (json.loads(v["queue"]) if v.get("queue") else {}); app = (aq.get("app") or "your arr").capitalize()
         if aq.get("state") == "importBlocked": return f"Finished, but {app} cannot import it on its own" + (f" ({aq['why'].rstrip('.')})" if aq.get("why") else "") + f". Open {app}'s Activity queue and import it by hand or remove it there; Dedupearr leaves it alone."
         return f"Finished, and {app} is {IMPORT_WAIT.get(aq.get('state'), 'about to import it')}. Nothing to do; once it is in the library this download is judged like any other."
-    if code == "SEEDING_ONLY": return f"Kept for seeding: {ci['client'] if ci else 'your client'} is seeding it and nothing in the library came from it. Not counted as waste; it goes when you remove the torrent."
+    if code == "SEEDING_ONLY": return f"Kept for seeding: {ci['client'] if ci else 'your client'} is seeding it and nothing in the library came from it" + (f" (it is {xk})" if (xk := extra_kind(v.get('path') or '')) else "") + ". Not counted as waste; it goes when you remove the torrent."
+    if code == "EXTRA": return f"Not library material: the name says it is {extra_kind(v.get('path') or '') or 'an extra'}. The arrs never import such files, so it is neither waste nor something to decide. Keep it, or remove it in your download client when you no longer want it."
     if code == "REAL_COPY": return "One file with two names: the library and the download folder share it, so seeding costs no extra space."
     if code == "LINKED_SEED": return f"This is the download-folder name of the library file {t}. Same file, no extra space."
     if code == "LIBRARY_ONLY": return "One copy, in the library. Nothing to do."
@@ -1470,6 +1498,229 @@ button{margin-top:18px;width:100%;padding:10px;border:0;border-radius:8px;backgr
 <body><form method="post" action="login"><h1>Dedupearr</h1><label for="u">User</label><input id="u" name="user" autocomplete="username" autofocus><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">__ERR__<button>Sign in</button>
 <p class="hint">Forgot it? Set <code>AUTH_USER</code> and <code>AUTH_PASSWORD</code> on the container: they replace the password set on the page.</p></form></body></html>"""
 
+# ------------------------------------------------------------------------------------------------------------------- settings (P1.7) and setup (P4.1)
+# Saved on the Settings and Setup tabs into the database in the config folder (kv 'settings'). A value set on the container always wins and
+# shows as locked on the page ("set on the container; change it there"). FIX_MODE, HOLD_DAYS and the folders to scan stay container-only.
+_HINT_DEFAULTS = {"LIBRARY_HINTS": "media,library,movies,movie,films,tv,shows,series,anime,plex,jellyfin",
+                  "DOWNLOAD_HINTS": "torrents,torrent,downloads,download,complete,completed,incomplete,intermediate,seeding,seeds,usenet,nzb,nzbget,sabnzbd,qbittorrent,deluge",
+                  "RECYCLE_HINTS": ".recycle,.trash,recycle,trash,.recyclebin,#recycle,@recycle,.trash-1000"}
+SETTABLE = {   # name -> (group, kind, default, label, hint)
+    "RECYCLE_DAYS": ("rules", "int", "30", "Days a file may sit in a recycle bin", "Older than this, a recycle-bin file counts as waste."),
+    "SEED_MIN_RATIO": ("rules", "num", "1.0", "Seeding ratio to reach", "A torrent is done seeding once it reaches this ratio (and the days below, as the rule says)."),
+    "SEED_MIN_DAYS": ("rules", "num", "14", "Days of seeding to reach", "A torrent is done seeding after this many days (and the ratio above, as the rule says)."),
+    "SEED_RULE": ("rules", "choice:auto,both,either", "auto", "Which of the two", "auto: private torrents need both, public ones either. both: always both. either: one is enough."),
+    "MIN_SIZE_MB": ("rules", "int", "50", "Smallest file to judge (MB)", "Smaller video files, such as samples, are left out of every scan."),
+    "SCAN_TIME": ("rules", "time", "04:30", "Nightly scan time", "Hours and minutes, in the container's time zone."),
+    "LIBRARY_DIRS": ("rules", "dirs", "", "Library folders", "Only when their names do not say so: folders inside the scanned folders, separated by commas."),
+    "DOWNLOAD_DIRS": ("rules", "dirs", "", "Download folders", "Only when their names do not say so: folders inside the scanned folders, separated by commas."),
+    "RECYCLE_DIRS": ("rules", "dirs", "", "Recycle-bin folders", "Only when their names do not say so: folders inside the scanned folders, separated by commas."),
+    "LIBRARY_HINTS": ("rules", "words", _HINT_DEFAULTS["LIBRARY_HINTS"], "Folder names that mean library", "A folder with one of these names, anywhere in the path, is library. Separated by commas."),
+    "DOWNLOAD_HINTS": ("rules", "words", _HINT_DEFAULTS["DOWNLOAD_HINTS"], "Folder names that mean downloads", "Separated by commas."),
+    "RECYCLE_HINTS": ("rules", "words", _HINT_DEFAULTS["RECYCLE_HINTS"], "Folder names that mean a recycle bin", "These win over the two lists above. Separated by commas."),
+}
+CONN_GROUPS = {"Sonarr": ["SONARR_URL", "SONARR_APIKEY"], "Radarr": ["RADARR_URL", "RADARR_APIKEY"], "Whisparr": ["WHISPARR_URL", "WHISPARR_APIKEY"], "Sportarr": ["SPORTARR_URL", "SPORTARR_APIKEY"],
+               "Lidarr": ["LIDARR_URL", "LIDARR_APIKEY"], "Deluge": ["DELUGE_URL", "DELUGE_PASSWORD"], "NZBGet": ["NZBGET_URL", "NZBGET_USER", "NZBGET_PASSWORD"], "qBittorrent": ["QBIT_URL", "QBIT_USER", "QBIT_PASSWORD"],
+               "rTorrent": ["RTORRENT_URL", "RTORRENT_USER", "RTORRENT_PASSWORD"], "Transmission": ["TRANSMISSION_URL", "TRANSMISSION_USER", "TRANSMISSION_PASSWORD"], "SABnzbd": ["SABNZBD_URL", "SABNZBD_APIKEY"], "Auditarr": ["AUDITARR_URL"]}
+for _g, _names in CONN_GROUPS.items():
+    for _n in _names: SETTABLE[_n] = ("conn:" + _g, "url" if _n.endswith("_URL") else "user" if _n.endswith("_USER") else "secret", "", {"url": "Address", "user": "User"}.get(_n.rsplit("_", 1)[1].lower(), "API key" if _n.endswith("APIKEY") else "Password"), "")
+SETTINGS = {}   # what the page saved
+def _envset(name): return bool(os.environ.get(name, "").strip())
+def group_locked(name):
+    """A connection's address and its password go together: when any of them is set on the container, the page changes none of them,
+    so a password from the container is never sent to an address typed on the page."""
+    g = SETTABLE[name][0]
+    return any(_envset(n) for n in CONN_GROUPS[g[5:]]) if g.startswith("conn:") else _envset(name)
+def setting(name):
+    """(effective raw value, source): container | page | default."""
+    if _envset(name) or (SETTABLE[name][0].startswith("conn:") and group_locked(name)): return os.environ.get(name, "").strip(), "container"
+    if name in SETTINGS: return str(SETTINGS[name]), "page"
+    return SETTABLE[name][2], "default"
+def validate_setting(name, value):
+    """The cleaned value, or ValueError with a sentence a person understands."""
+    _, kind, default, label, _ = SETTABLE[name]; v = str(value if value is not None else "").strip(); low = label[0].lower() + label[1:]
+    if len(v) > 2000 or "\n" in v or "\r" in v: raise ValueError(f"{label}: that is too long or has a line break")
+    if kind == "int":
+        if not re.fullmatch(r"\d{1,6}", v) or not (1 <= int(v) <= (3650 if name == "RECYCLE_DAYS" else 100000)): raise ValueError(f"{label}: a whole number, 1 or more")
+        return str(int(v))
+    if kind == "num":
+        try: f = float(v)
+        except ValueError: raise ValueError(f"{label}: a number, such as 1 or 1.5") from None
+        if not (0 <= f <= (1000 if "RATIO" in name else 3650)) or f != f: raise ValueError(f"{label}: a number between 0 and {1000 if 'RATIO' in name else 3650}")
+        return f"{f:g}"
+    if kind.startswith("choice:"):
+        if v.lower() not in kind[7:].split(","): raise ValueError(f"{label}: one of {kind[7:].replace(',', ', ')}")
+        return v.lower()
+    if kind == "time":
+        m = re.fullmatch(r"(\d{1,2}):(\d{2})", v)
+        if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59: raise ValueError(f"{label}: hours and minutes, such as 04:30")
+        return f"{int(m.group(1)):02d}:{m.group(2)}"
+    if kind == "dirs":
+        out = []
+        for d_ in [x.strip().rstrip("/") for x in v.split(",") if x.strip()]:
+            if not d_.startswith("/") or "/.." in d_ + "/" or not any(d_ == r or d_.startswith(r.rstrip("/") + "/") for r in SCAN_ROOTS): raise ValueError(f"{label}: {d_} is not a folder inside the scanned folders ({', '.join(SCAN_ROOTS)})")
+            out.append(d_)
+        return ",".join(dict.fromkeys(out))
+    if kind == "words":
+        ws = [x.strip().lower() for x in v.split(",") if x.strip()]
+        if not ws: raise ValueError(f"{label}: keep at least one name; 'Use the default' brings the usual list back")
+        if any("/" in w or len(w) > 60 for w in ws): raise ValueError(f"{label}: folder names only, without slashes")
+        return ",".join(dict.fromkeys(ws))
+    if kind == "url":
+        if v and not re.fullmatch(r"https?://[A-Za-z0-9._\[\]:-]+(/[^\s]*)?", v): raise ValueError(f"{low[0].upper() + low[1:]} of {SETTABLE[name][0][5:]}: it must start with http:// or https:// and name a host, such as http://192.168.1.10:8989")
+        return v.rstrip("/")
+    return v   # user, secret
+def refresh_globals():
+    """Put the effective settings into the module's settings, the way the environment did at start."""
+    g = globals(); val = lambda n: setting(n)[0]
+    g["RECYCLE_DAYS"] = int(val("RECYCLE_DAYS") or 30); g["MIN_SIZE_MB"] = int(val("MIN_SIZE_MB") or 50); g["SCAN_TIME"] = val("SCAN_TIME") or "04:30"
+    g["SEED_MIN_RATIO"] = float(val("SEED_MIN_RATIO") or 1.0); g["SEED_MIN_DAYS"] = float(val("SEED_MIN_DAYS") or 14); g["SEED_RULE"] = (val("SEED_RULE") or "auto").lower()
+    for n in ("LIBRARY_DIRS", "DOWNLOAD_DIRS", "RECYCLE_DIRS"): g[n] = [x.strip().rstrip("/") for x in val(n).split(",") if x.strip()]
+    for n in _HINT_DEFAULTS: g[n] = [x.strip().lower().rstrip("/") for x in (val(n) or _HINT_DEFAULTS[n]).split(",") if x.strip()]
+    for app in ARRS: ARRS[app].update(url=val(f"{app.upper()}_URL").rstrip("/"), key=val(f"{app.upper()}_APIKEY"))
+    for kind, names in CONN_GROUPS.items():
+        if kind not in CLIENTS: continue
+        for n in names: CLIENTS[kind]["url" if n.endswith("_URL") else "user" if n.endswith("_USER") else "key" if n.endswith("APIKEY") else "password"] = val(n).rstrip("/") if n.endswith("_URL") else val(n)
+        src = setting(names[0])[1]
+        if CLIENTS[kind]["url"]: CLIENT_SOURCE[kind] = "container" if src == "container" else "page"
+        else: CLIENT_SOURCE.pop(kind, None)
+    g["AUDITARR_URL"] = val("AUDITARR_URL").rstrip("/")
+def load_settings(c=None):
+    own = c is None; c = c or db()
+    try: raw = kv_get(c, "settings"); SETTINGS.clear(); SETTINGS.update({k: v for k, v in (json.loads(raw) if raw else {}).items() if k in SETTABLE})
+    except (ValueError, AttributeError) as e: log(f"settings: the saved settings could not be read ({e}); the container's and the defaults apply")
+    finally:
+        if own: c.close()
+    refresh_globals()
+def settings_view():
+    """GET /api/settings: every setting with its value, where it comes from and whether the page may change it. Passwords and keys are never sent back."""
+    items = []
+    for name, (group, kind, default, label, hint) in SETTABLE.items():
+        v, src = setting(name)
+        items.append({"name": name, "group": group, "kind": kind, "label": label, "hint": hint, "default": default, "source": src, "locked": group_locked(name),
+                      "value": "" if kind == "secret" else v, "saved": bool(v) if kind == "secret" else None})
+    return {"items": items, "groups": list(CONN_GROUPS), "fixed": {"FIX_MODE": FIX_MODE, "SCAN_ROOTS": SCAN_ROOTS, "HOLD_DAYS": HOLD_DAYS}}
+def save_settings(c, body, who):
+    """POST /api/settings {"set": {name: value}, "reset": [names]} -> (code, obj). Values set on the container are refused by name."""
+    changes = body.get("set") if isinstance(body.get("set"), dict) else {}; reset = body.get("reset") if isinstance(body.get("reset"), list) else []
+    unknown = [k for k in list(changes) + reset if k not in SETTABLE]
+    if unknown: return 400, {"error": f"not a setting this page can change: {', '.join(map(str, unknown))[:200]}"}
+    locked = [k for k in list(changes) + reset if group_locked(k)]
+    if locked: return 409, {"error": f"{SETTABLE[locked[0]][3]}{' of ' + SETTABLE[locked[0]][0][5:] if SETTABLE[locked[0]][0].startswith('conn:') else ''} is set on the container, so it is changed there, not here"}
+    new = dict(SETTINGS)
+    try:
+        for k, v in changes.items():
+            v = validate_setting(k, v)
+            if SETTABLE[k][1] == "secret" and v == "" and not body.get("clear_" + k): continue   # an empty password box means 'keep the saved one'
+            if v == SETTABLE[k][2]: new.pop(k, None)
+            else: new[k] = v
+    except ValueError as e: return 400, {"error": str(e)}
+    for k in reset: new.pop(k, None)
+    for g, names in CONN_GROUPS.items():   # a new address forgets the old password, so a saved password never goes to an address it was not typed for
+        u = names[0]
+        if new.get(u, "") != SETTINGS.get(u, "") and SETTINGS.get(u):
+            for n in names[1:]:
+                if SETTABLE[n][1] == "secret" and n not in changes: new.pop(n, None)
+    old = dict(SETTINGS); kv_set(c, "settings", json.dumps(new)); load_settings(c)
+    changed = sorted(k for k in set(new) | set(old) if new.get(k) != old.get(k))   # names only: a password never reaches the log
+    record_action(c, "on", "settings", "settings", f"by {who or 'the page'}", "changed: " + ", ".join(changed)[:400] if changed else "nothing changed")
+    return 200, {"ok": True, "note": ("Saved. The next scan uses it" + ("; press Scan now to see the change." if any(SETTABLE[k][0] == "rules" for k in changed) else ".")) if changed else "Nothing changed.", "settings": settings_view()}
+def settings_writable(ip, headers):
+    """May this request change settings? -> (yes, why not). With sign-in on, a signed-in person may. Without it, only a browser on your own
+    network talking to the port directly, like the first password: through a domain nobody may point your apps somewhere else."""
+    if SANDBOX: return False, "This is the public demo: its settings are fixed."
+    if auth_on(): return True, ""
+    if direct_local(ip, headers): return True, ""
+    return False, "Settings can only be changed from your own network while the page has no sign-in. Turn on Protect the page (About tab) to change them from anywhere."
+
+def test_connection(name):
+    """POST /api/setup/test: ask one arr or client with what is saved now (never with what a request sends). Reads only. -> (ok, sentence)"""
+    try:
+        if name.lower() in ARRS:
+            cfg = ARRS[name.lower()]
+            if not cfg["url"] or not cfg["key"]: return False, f"{name} has no address or API key yet. Type them above and press Save first."
+            j = http_json(f"{cfg['url']}/api/{api_v(name.lower())}/system/status", headers={"X-Api-Key": cfg["key"]}, timeout=15)
+            if not isinstance(j, dict) or not j.get("version"): return False, f"Something answered at {name}'s address, but not {name} (a sign-in page or another app)."
+            return True, f"{name} answered (version {str(j['version'])[:20]})."
+        if name == "Auditarr":
+            if not AUDITARR_URL: return False, "Auditarr has no address yet. Type it above and press Save first."
+            j = http_json(AUDITARR_URL + "/api/changed", timeout=15)
+            if not isinstance(j, dict) or not isinstance(j.get("files"), list): return False, "Something answered at Auditarr's address, but not Auditarr's list of changed files (an older Auditarr, or a sign-in page)."
+            return True, f"Auditarr answered: it lists {len(j['files'])} files it changed."
+        if name in READERS:
+            cfg = CLIENTS[name] if CLIENTS[name]["url"] else ACTIVE.get(name)
+            if not cfg or not cfg.get("url"): return False, f"{name} has no address yet, and none of your arrs lists it. Type it above and press Save first."
+            before = dict(CLIENT_STATUS.get(name) or {}); had = name in CLIENT_STATUS
+            try: got = READERS[name](cfg, 15); n = CLIENT_STATUS.get(name, {}).get("n", 0)
+            finally:   # a test is not a scan: About keeps what the last scan learned
+                if had: CLIENT_STATUS[name] = before
+                else: CLIENT_STATUS.pop(name, None)
+            return True, f"{name} answered: it knows {n} {'jobs' if name in USENET else 'torrents'} ({len(got)} files and folders)."
+        return False, "Dedupearr does not know that app."
+    except urllib.error.HTTPError as e: return False, f"{name} answered with an error ({e.code}{': the key or password was refused' if e.code in (401, 403) else ''})."
+    except Exception as e: return False, f"{name} did not answer: {str(e)[:160]}."
+
+def _mounts():
+    """The mounts this container sees (/proc/self/mountinfo): mount point, the folder of its source it shows, filesystem."""
+    out = []
+    try:
+        with open("/proc/self/mountinfo") as fh:
+            for line in fh:
+                a, _, b = line.partition(" - "); pa, pb = a.split(), b.split()
+                if len(pa) >= 5 and pb: out.append({"point": pa[4].replace("\\040", " "), "root": pa[3].replace("\\040", " "), "fs": pb[0]})
+    except OSError: pass
+    return out
+def _mount_of(path, mounts):
+    best = None
+    for m in mounts:
+        p = m["point"].rstrip("/") or "/"
+        if (p == "/" or path == p or path.startswith(p + "/")) and (best is None or len(p) > len(best["point"].rstrip("/") or "/")): best = m
+    return best
+def mount_test(c, mounts=None):
+    """P4.1, the shared-mount test: can a library file and a download be one file? Two answers, from what is known without guessing:
+    Dedupearr's own view (are the library and the downloads on one mount here) and each arr's import history (does it move files between
+    two different top folders, which inside its container usually means two mounts and therefore a copy for every import).
+    -> {"ok": True | False | None, "lead": sentence, "lines": [{"level", "text"}]}"""
+    mounts = _mounts() if mounts is None else mounts; lines = []
+    rows = c.execute("SELECT path, dev, kind FROM file WHERE kind IN ('library','download')").fetchall()
+    lib = [r for r in rows if r["kind"] == "library"]; dl = [r for r in rows if r["kind"] == "download"]
+    links = c.execute("SELECT COUNT(*) FROM verdict WHERE code='REAL_COPY'").fetchone()[0]; twice = c.execute("SELECT COUNT(*) FROM verdict WHERE code IN ('DUPLICATE_COPY','DUPLICATE_HEADER')").fetchone()[0]
+    ok = None
+    if not lib or not dl:
+        lead = "Scan first: the test needs at least one library file and one download." if not rows else f"The last scan found {'no library files' if not lib else 'no downloads'}, so there is nothing to compare. Check the folder names on the Settings tab."
+    else:
+        mp = lambda rs: sorted({(_mount_of(r["path"], mounts) or {"point": "/"})["point"] for r in rs}); lm, dm = mp(lib), mp(dl)
+        same_dev = bool({r["dev"] for r in lib} & {r["dev"] for r in dl})
+        if set(lm) & set(dm) and same_dev:
+            ok = True; lead = "Your library and your downloads sit on one mount here, so a download and its library file can be one file."
+            lines.append({"level": "ok", "text": f"The last scan found {links} library file{'s that share their' if links != 1 else ' that shares its'} bytes with a download: hardlinks work." if links else "No library file shares its bytes with a download yet." + (" Your arrs copy instead of linking; see below." if twice else "")})
+        else:
+            ok = False; cp = os.path.commonpath(lm + dm) if lm and dm else "/"
+            lead = (f"Your library ({', '.join(lm)}) and your downloads ({', '.join(dm)}) are two separate mounts here, so they can never be one file, and Make them one file cannot work."
+                    if not set(lm) & set(dm) else "Your library and your downloads are on two different disks or shares, so a hardlink cannot join them.")
+            lines.append({"level": "warn", "text": f"The one-line change: mount the folder on your server that holds both once, for example -v /mnt/user/data:{cp if cp != '/' else '/data'}, instead of one -v line for each, and point Dedupearr's scanned folders at the folders inside it."})
+    lay = LAYOUT
+    if not lay:
+        try: lay = json.loads(kv_get(c, "arr_layout") or "{}")
+        except ValueError: lay = {}
+    for app, L in sorted(lay.items()):
+        if not isinstance(L, dict) or not L.get("from") or not L.get("to"): continue
+        A = app.capitalize()
+        if L["from"] == L["to"]: lines.append({"level": "ok", "text": f"{A} takes downloads and puts the library under one folder ({L['from']}), so it can link instead of copying."})
+        else:
+            lines.append({"level": "warn", "text": f"{A} takes its downloads from {L['from']} and puts the library in {L['to']}. If those are two mounts in {A}'s own container, {A} copies every import instead of linking it. The one-line change there: give {A} one mount for both, for example /data, with the downloads at /data/torrents and the library at /data/media."})
+            ok = False   # something to change, even when Dedupearr's own view is fine
+    return {"ok": ok, "lead": lead, "lines": lines}
+def setup_view(c):
+    """GET /api/setup: the shared-mount test, what the arrs list, and what each connection said on the last scan."""
+    st = client_status(); conns = []
+    for g, names in CONN_GROUPS.items():
+        u, src = setting(names[0])
+        if g in CLIENTS and not u and ACTIVE.get(g, {}).get("url"): u, src = ACTIVE[g]["url"], "arr"
+        known = st.get(g) or st.get(g.capitalize()) or {}
+        conns.append({"name": g, "kind": "arr" if g.lower() in ARRS else "auditarr" if g == "Auditarr" else "usenet" if g in USENET else "torrent", "fields": names, "url": u, "source": src, "locked": group_locked(names[0]),
+                      "status": ("ok" if known.get("ok") else "warn") if known else "", "note": str(known.get("note") or "")[:200]})
+    return {"mount": mount_test(c), "discovered": discovery(), "connections": conns}
+
 # ------------------------------------------------------------------------------------------------------------------- http
 ICON_LINK = '<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACNElEQVR42u2bO27DMAyGRUFbhy5ZOmY0kCvkGEXOaPQYuUKAjBm9ePHQNe3QqkhcS9aDpF7m4iWO+f2kJFKWQXjY6+7tSxRg0ziA62+hFuhQMWTN8C4MUCu4azbIVuBNbLIVeBOjFI0bcES/62/e91xPe5b5ALDhQ2BTiTKNA6AIQAlNKUa0AC7gMY5S//80DgCY8NTjluK5QQLMneAAp/LBW4DHB6cAx/ZHYo/JXMQgEaBGUxiK5zAHJBEghRDYwzBYgOtp/88Z7CXKtQ6IESUqAzSczQGqiRMr2xS2MyX1AmgC2JyMEYRjTkEVADv6HOW2yhGcc8VR1OBUqwCWEF69wBpwDnWArw/RQ4C7CsRecWRJ8BTPb74ZkpTjsYS+QGE6sTVDWzPUeDNEAXuWB3G8X/IuhW3OxYhyloe/6+79M/9mCDMLNLy28eNFCCHQhciyGZrDazveL6LrM5oDyJqh32jP4SmaIYUJjxGVcQH+J+2XJ9rY7EPfEsOGp15xVA7gNnjTpIclBEsztBZZX/hkzVBIxDWcCRITPsQ/stfjLmAx8Mlej/usAjbAUPgsDkj4LEFLRY1JgDk89aZrtACujpoqO1uhU2Q3SNn+Um24AMfx2K6/WbNgKfpcG67AeT7YZdxzG+uusIadX1MatHBCPJsMyFIAnw+MarNpHGDLgE0A4fedXU3p/5QBLYnwyLoNAZMyLUR/MQNqFmGJzQpbS5VoC6oMvbEG+NUMKDUjfAL3DbciWR5v94twAAAAAElFTkSuQmCC">'
 UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui.html")
@@ -1517,6 +1768,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if p == "/api/about": return self._json(200, about(c))
                 if p == "/api/actions": return self._json(200, {"actions": actions(c), "fix_mode": FIX_MODE})
                 if p == "/api/digest": return self._json(200, digest(c))
+                if p == "/api/settings": ok_, why = settings_writable(self.client_address[0], self.headers); return self._json(200, dict(settings_view(), writable=ok_, why_not=why))
+                if p == "/api/setup": ok_, why = settings_writable(self.client_address[0], self.headers); return self._json(200, dict(setup_view(c), writable=ok_, why_not=why))
                 if p == "/health":
                     last = c.execute("SELECT finished, note FROM run ORDER BY id DESC LIMIT 1").fetchone()
                     ok = last and last["note"] == "ok" and time.time() - last["finished"] < 2 * 86400; nb = nightly_bot()
@@ -1561,6 +1814,17 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"ok": True, "note": "On your own network the page opens without a sign-in; through your domain it still asks." if on else "The page asks for a sign-in everywhere, your own network too."})
             if SANDBOX and not sandbox_rate_ok((self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()):
                 return self._json(429, {"error": f"slow down: the demo allows {SANDBOX_RATE} clicks a minute per visitor"})
+            if p == "/api/settings":   # P1.7 / P4.1: the same sign-in as every other change, and without one only from your own network
+                ok_, why = settings_writable(self.client_address[0], self.headers)
+                if not ok_: return self._json(403, {"error": why})
+                c = db()
+                try: code, obj = save_settings(c, body, who or self.client_address[0])
+                finally: c.close()
+                return self._json(code, obj)
+            if p == "/api/setup/test":
+                name = str(body.get("name") or "")
+                if not name: return self._json(400, {"error": "which app?"})
+                ok_, note = test_connection(name); return self._json(200, {"ok": ok_, "note": note})
             if p == "/api/scan":
                 if SCANNING["on"]: return self._json(200, {"ok": True, "note": "a scan is already running"})
                 if FIXING["path"]: return self._json(200, {"ok": True, "note": "a fix is still comparing two big files; scan when it is done"})
@@ -1616,15 +1880,19 @@ def scheduler():
     """A scan when the day's SCAN_TIME comes round, and one at start if the last one is more than 20 hours old."""
     c = db(); last = c.execute("SELECT finished FROM run WHERE note='ok' ORDER BY id DESC LIMIT 1").fetchone(); c.close()
     if not last or time.time() - last["finished"] > 20 * 3600: threading.Thread(target=scan, daemon=True).start()
-    hh, mm = (int(x) for x in SCAN_TIME.split(":"))
     while True:
+        try: hh, mm = (int(x) for x in SCAN_TIME.split(":"))   # read each night: the Settings tab can change it
+        except ValueError: hh, mm = 4, 30
         now = datetime.datetime.now(); nxt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
         if nxt <= now: nxt += datetime.timedelta(days=1)
-        time.sleep(max(1, (nxt - now).total_seconds()))
+        wait = (nxt - now).total_seconds()
+        if wait > 60: time.sleep(60); continue   # look again every minute, so a new time from the Settings tab counts tonight
+        time.sleep(max(1, wait))
         try: scan()
         except Exception: pass
         try: send_digest()   # also after a failed scan: the message then says so
         except Exception as e: note_error("the morning message failed: " + repr(e))
+        time.sleep(61)   # never twice for one night
 
 def main():
     ap = argparse.ArgumentParser(description=f"{APP}: {TAGLINE}")
@@ -1634,6 +1902,8 @@ def main():
     ap.add_argument("--digest", action="store_true", help="print the morning message; with --send, also push it to NTFY_URL")
     ap.add_argument("--send", action="store_true", help="with --digest: send it now")
     a = ap.parse_args()
+    try: load_settings()   # P1.7: what the Settings and Setup tabs saved (the container's settings still win)
+    except Exception as e: log(f"settings: could not load the saved settings ({e}); the container's and the defaults apply")
     if a.digest:
         c = db(); d = digest(c); print(d["title"] + "\n" + d["text"])
         if a.send: print("sent" if ntfy(d["title"], d["text"], d["priority"], d["click"]) else "not sent (NTFY_URL is not set, or the topic refused it)")

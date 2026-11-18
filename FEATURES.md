@@ -29,7 +29,8 @@ The left column is the internal code (handy when searching the code or the API);
 | ORPHAN | no download client knows the file and no arr imported it; nothing holds it | the file's size |
 | DOWNLOADING | a client is still downloading it (usenet or torrent); looked at again once it finishes | 0 |
 | AWAITING_IMPORT | finished, and Sonarr/Radarr/… has it in its queue to import, or cannot import it on its own (the reason is shown, with where to fix it) | 0 |
-| SEEDING_ONLY | a client seeds it and no arr ever imported it (software, extras, torrents you keep on purpose) | 0 |
+| SEEDING_ONLY | a client seeds it and no arr ever imported it (software, extras, torrents you keep on purpose); the sentence says when the name marks it as an extra or a disc image | 0 |
+| EXTRA | **Extra, not library**: a download whose name or folder marks it as not library material (an opening or ending without credits, NCOP/NCED; a trailer, sample, menu or making-of; a disc image, `.iso`; software or games), when no client or arr says more. Quiet: not waste and not a decision. An episode whose title merely says *Menu* or *Samples* stays a download to decide on; a finished usenet job stays a decision | 0 |
 | BIN_OLD | in a recycle bin longer than `RECYCLE_DAYS` | the file's size |
 | BIN_RECENT | in a recycle bin, within the rule | 0 |
 | OTHER | the folder name gives no hint (not library, downloads or recycle bin); set `LIBRARY_DIRS` / `DOWNLOAD_DIRS` / `RECYCLE_DIRS` | 0 |

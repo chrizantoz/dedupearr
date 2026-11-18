@@ -9,10 +9,18 @@ results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:220]}]"))
 
 now = time.time(); P = fake_disk.build(DATA, now)
+# P1.12 (2026-11-18): not library material in a download folder, and no client to ask: an opening without credits, a disc image, a film's extras folder
+X = {"x_ncop": fake_disk.blob(f"{DATA}/torrents/anime/[Grp] Dr. Stone - NCOP 01 [BD 1080p].mkv", 8, "ncop"), "x_iso": fake_disk.blob(f"{DATA}/torrents/software/Some.App.2026/Some.App.2026.iso", 9, "iso"),
+     "x_feat": fake_disk.blob(f"{DATA}/torrents/movies/Heat.1995.Remastered/Extras/Making.Of.Heat.mkv", 10, "makingof"), "x_ep": fake_disk.blob(f"{DATA}/torrents/tv/Next.Chef.S04E07.The.Menu.Free.Samples.1080p.mkv", 7, "the-menu")}
 r = d.scan(now=now); c = d.db(); S = d.state(c)
 by = {i["path"]: i for i in S["items"]}
 code = lambda k: by.get(P[k], {}).get("code")
-check("scan counted only real-size videos (17 names, hardlinks counted per name)", r["files"] == 17, r)
+check("scan counted only real-size videos (17 names, hardlinks counted per name, plus the four P1.12 files)", r["files"] == 17 + len(X), r)
+xc = lambda k: by.get(X[k], {})
+check("extras, a disc image and software in a download folder are 'Extra, not library': quiet, no waste, nothing to decide (P1.12)",
+      all(xc(k).get("code") == "EXTRA" and xc(k)["wasted"] == 0 and not xc(k)["needs_you"] for k in ("x_ncop", "x_iso", "x_feat")), [(k, xc(k).get("code")) for k in X])
+check("each says what it is in words", "without credits" in xc("x_ncop")["plain"] and "disc image" in xc("x_iso")["plain"] and "an extra" in xc("x_feat")["plain"], [xc(k).get("plain", "")[:80] for k in X])
+check("an episode whose title happens to say 'Menu' or 'Samples' is still a download to decide on", xc("x_ep").get("code") == "DOWNLOAD_UNMATCHED", xc("x_ep").get("code"))
 check("library + hardlinked download = Real copy", code("real_lib") == "REAL_COPY", code("real_lib"))
 check("its download-folder name is the Seeding name, pointing at the library file", code("real_seed") == "LINKED_SEED" and by[P["real_seed"]]["twin"] == P["real_lib"])
 check("identical content on two inodes = Stored twice, with the library twin", code("dup_dl") == "DUPLICATE_COPY" and by[P["dup_dl"]]["twin"] == P["dup_lib"], by.get(P["dup_dl"]))
@@ -30,8 +38,8 @@ check("2 days in the bin = In the recycle bin, not waste", code("bin_new") == "B
 check("an unrecognised folder = Unsorted folder", code("other") == "OTHER")
 check("tiny file and text file are not judged at all", P["small"] not in by and P["text"] not in by)
 mb = 1024 * 1024
-check("wasted = duplicate (4) + header-differs (4) + unmatched (5) + other release (6) + old bin (2) MB", r["wasted"] == 21 * mb, r["wasted"])
-check("reclaim (duplicate + old bin) and 'to decide' (unmatched) are reported apart", S["reclaim_bytes"] == 10 * mb and S["decide_bytes"] == 11 * mb, (S["reclaim_bytes"], S["decide_bytes"]))
+check("wasted = duplicate (4) + header-differs (4) + unmatched (5 + the 7 MB episode) + other release (6) + old bin (2) MB; the extras add nothing", r["wasted"] == 28 * mb, r["wasted"])
+check("reclaim (duplicate + old bin) and 'to decide' (unmatched) are reported apart", S["reclaim_bytes"] == 10 * mb and S["decide_bytes"] == 18 * mb, (S["reclaim_bytes"], S["decide_bytes"]))
 check("library size counts each inode once (3+4+4+3+2+2+2 = 20 MB, the twin not doubled)", S["library_bytes"] == 20 * mb, S["library_bytes"])
 check("evidence names inodes and link counts", "inode" in by[P["dup_dl"]]["evidence"] and "link count" in by[P["real_lib"]]["evidence"])
 check("the duplicate was confirmed with full checksums", "checksums identical" in by[P["dup_dl"]]["evidence"], by[P["dup_dl"]]["evidence"])

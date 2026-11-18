@@ -38,7 +38,8 @@ Each row is one file with a coloured chip:
 | 🟡 **Different release in library** | nothing identical, but the library has another release of the same title (same name and year, or same episode) | almost always a leftover from an upgrade: the download can go once seeding is done |
 | 🟡 **Leftover from an upgrade** | Sonarr or Radarr imported this download, and the library has since replaced the file it became | it can go; the row says whether seeding is done |
 | 🔴 **Orphan** | no download client knows this file and no arr imported it | nothing holds it; it can go |
-| 🟢 **Seeding only** | your client seeds it and nothing in the library came from it (software, extras, torrents you keep) | nothing; it goes when you remove the torrent |
+| 🟢 **Seeding only** | your client seeds it and nothing in the library came from it (software, extras, torrents you keep); the sentence says when it is an extra or a disc image | nothing; it goes when you remove the torrent |
+| 🟢 **Extra, not library** | an opening or ending without credits (NCOP, NCED), a trailer, sample or making-of, a disc image or software in a download folder, and nothing else is known about it | nothing; the arrs never import these, so it is neither waste nor a decision. Remove it in your client when you no longer want it |
 | ⚪ **Looks alike** | same size as a library file but different content | not a duplicate; worth a look if you expected one copy |
 | ⚪ **Old recycle-bin file** | in a recycle bin longer than your rule (30 days by default) | empty it |
 | 🟢 **In the recycle bin** | in a recycle bin, within the rule | nothing yet |
