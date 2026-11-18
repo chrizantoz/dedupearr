@@ -5,6 +5,7 @@ const { JSDOM, VirtualConsole } = require("jsdom");
 const [,, uiPath, dataDir] = process.argv;
 const html = fs.readFileSync(uiPath, "utf8");
 const data = {}; for (const n of ["state", "about"]) data[n] = JSON.parse(fs.readFileSync(path.join(dataDir, n + ".json"), "utf8"));
+for (const n of ["settings", "setup"]) { const f = path.join(dataDir, n + ".json"); data[n] = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : null; }   // optional: the server's nightly run fetches only state and about
 const EDGE = fs.existsSync(path.join(dataDir, "edge.json")) ? JSON.parse(fs.readFileSync(path.join(dataDir, "edge.json"), "utf8")).case : "";   // tidy | empty | huge | down | errors
 const posts = []; const errors = [];
 const vc = new VirtualConsole(); vc.on("jsdomError", e => errors.push(String(e.message || e)));
@@ -17,6 +18,8 @@ const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true
       if (u.includes("api/scan")) return body({ ok: true, note: "scan started; the page updates itself" });
       if (u.includes("api/fix")) return body({ ok: true, dry_run: true, kind: "remove", steps: ["Ask Deluge to remove the torrent without deleting its files.", "Move the file into the holding bin (nothing is deleted).", "Keep it for 14 days, then delete it, unless you press Undo."], frees: 1, frees_h: "4.2 MB", note: "Dry run: nothing was changed." });
       if (u.includes("api/restore")) { const id = JSON.parse(opts.body).id; const h = (data.state.holding || {}).items || []; const k = h.findIndex(x => x.id === id); if (k >= 0) h.splice(k, 1); return body({ ok: true, note: "Put back in its old place. The next scan judges it again." }); }
+      if (u.includes("api/setup/test")) return body({ ok: true, note: JSON.parse(opts.body).name + " answered (version 4.0.0)." });
+      if (u.includes("api/settings")) return body({ ok: true, note: "Saved. The next scan uses it; press Scan now to see the change." });
       if (u.includes("api/setpassword")) return body({ ok: true, note: "Sign-in is on. This browser stays signed in; others are asked." });
       if (u.includes("api/local_login")) return body({ ok: true, note: "saved" });
       if (u.includes("api/unignore")) return body({ ok: true, note: "back in Needs you" });
@@ -25,6 +28,8 @@ const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true
     }
     if (u.includes("api/state")) return body(data.state);
     if (u.includes("api/about")) return body(data.about);
+    if (u.includes("api/settings")) return data.settings ? body(data.settings) : body({ error: "not found" }, 404);
+    if (u.includes("api/setup")) return data.setup ? body(data.setup) : body({ error: "not found" }, 404);
     if (u.includes("api/actions")) return body({ actions: [{ ts: 1, when: "2026-11-12T03:30", mode: "on", kind: "bin", path: "/data/torrents/tv/x.mkv", detail: "ORPHAN", result: "moved to the holding bin" }, { ts: 0, when: "2026-11-11T03:30", mode: "dryrun", kind: "remove", path: "/data/torrents/tv/y.mkv", detail: "", result: "dry run: would free 1 GB" }], fix_mode: data.state.fix_mode });
     return body({}, 404);
   };
@@ -185,6 +190,42 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
     }
   }
   if (data.state.last_run && !/ok/.test(data.state.last_run.note)) check("a failed last scan shows as a warning in health", $$("#health li.warn").length > 0);
+  // P4.1 Setup tab: the shared-mount test, one block per connection, Test asks with what is saved, Save sends only what changed
+  $("nav button[data-tab=setup]").click(); await sleep(80);
+  check("Setup tab shows, Files hides", !$("#setup").hidden && $("#files").hidden);
+  const SU = data.setup, SE = data.settings;
+  if (!SU || !SE) check("without Setup answers the tab says it cannot load instead of breaking", /cannot load/.test($("#mount-lead").textContent), $("#mount-lead").textContent);
+  else {
+    check("the shared-mount test says its answer in a sentence, with each finding as a line", $("#mount-lead").textContent === SU.mount.lead && $$("#mount-lines li").length === SU.mount.lines.length && $$("#mount-lines li.warn").length === SU.mount.lines.filter(l => l.level === "warn").length, $("#mount-lead").textContent.slice(0, 120));
+    check("one block per connection, each with Save and Test", $$("#conns .conn").length === SU.connections.length && $$("#conns button[data-saveconn]").length === SU.connections.length && $$("#conns button[data-test]").length === SU.connections.length);
+    check("a connection set on the container (or a page nobody may change) has its Save and its fields switched off", SU.connections.every(k => { const box = $$("#conns .conn").find(x => x.dataset.conn === k.name); const off = k.locked || !SU.writable; return box && box.querySelector("button[data-saveconn]").disabled === off && [...box.querySelectorAll("[data-set]")].every(el => el.disabled === (off || SE.items.find(i => i.name === el.dataset.set).locked)); }));
+    check("a password box never shows a saved password", $$("#conns input[type=password]").every(el => el.value === ""));
+    check("the arrs' Download Clients list is shown row by row", $$("#found-rows tr").length === Math.max(1, (SU.discovered.found || []).length), $$("#found-rows tr").length);
+    const tb = $("#conns button[data-test]"); const n0 = posts.length; tb.click(); await sleep(80);
+    check("Test posts the app's name and shows the answer beside the button", posts.slice(n0).some(p => p.url.includes("api/setup/test") && JSON.parse(p.body).name === tb.dataset.test) && /answered/.test(tb.parentElement.querySelector(".res").textContent), tb.parentElement.querySelector(".res").textContent);
+    const open = SU.connections.find(k => !k.locked && SU.writable);
+    if (open) {
+      const box = $$("#conns .conn").find(x => x.dataset.conn === open.name); const inp = box.querySelector("input[data-set$='_URL']");
+      inp.value = "http://192.168.1.10:1234"; const n1 = posts.length; box.querySelector("button[data-saveconn]").click(); await sleep(80);
+      const sent = posts.slice(n1).find(p => p.url.includes("api/settings"));
+      check("Save on a connection posts only what changed (its address), never an empty password", !!sent && JSON.stringify(JSON.parse(sent.body).set) === JSON.stringify({ [inp.dataset.set]: "http://192.168.1.10:1234" }), sent && sent.body);
+    }
+    // P1.7 Settings tab: one row per rule, the container's rules locked, Save changes sends only the changed rule, Use the default resets one
+    $("nav button[data-tab=rules]").click(); await sleep(80);
+    const rules = SE.items.filter(i => i.group === "rules");
+    check("Settings tab shows one row per rule, and a rule set on the container is switched off", !$("#rules").hidden && $$("#rules-form .setrow").length === rules.length && rules.every(i => $(`#rules-form [data-set=${i.name}]`).disabled === (i.locked || !SE.writable)), $$("#rules-form .setrow").length);
+    check("'Use the default' appears exactly on rules saved on this page", $$("#rules-form button[data-reset]").length === (SE.writable ? rules.filter(i => i.source === "page" && !i.locked).length : 0));
+    check("when the page may not change settings it says why", SE.writable || $("#rules-hint").textContent === SE.why_not, $("#rules-hint").textContent);
+    check("the settings only the container sets are listed in words", $$("#rules-fixed li").length === 3 && !rawCode.test($("#rules-fixed").textContent), $("#rules-fixed").textContent);   // fixed: three container-only settings (fixes, folders, holding days)
+    const free = rules.find(i => !i.locked && SE.writable && i.kind === "int");
+    if (free) {
+      const el = $(`#rules-form [data-set=${free.name}]`); el.value = String(+free.value + 1); const n2 = posts.length; $("#rules-save").click(); await sleep(80);
+      const sent = posts.slice(n2).find(p => p.url.includes("api/settings"));
+      check("Save changes posts only the changed rule and says it is saved", !!sent && JSON.stringify(JSON.parse(sent.body).set) === JSON.stringify({ [free.name]: String(+free.value + 1) }) && /Saved/.test($("#toast").textContent), sent && sent.body);
+    }
+    const rb = $("#rules-form button[data-reset]");
+    if (rb) { const n3 = posts.length; const nm = rb.dataset.reset; rb.click(); await sleep(80); check("Use the default posts a reset of that one rule", posts.slice(n3).some(p => p.url.includes("api/settings") && JSON.stringify(JSON.parse(p.body).reset) === JSON.stringify([nm]))); }
+  }
   // press everything else once
   for (const b of $$("button")) { try { b.click(); } catch (e) { errors.push("click " + (b.id || b.className) + ": " + e); } await sleep(5); }
   await sleep(100);

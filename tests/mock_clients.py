@@ -132,7 +132,7 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                 if u.path == f"/{app}/api/{v}/queue":
                     if self.headers.get("X-Api-Key") != "test": return self._send({"error": "Unauthorized"}, 401)
                     recs = world.get("queue", {}).get(app, []); return self._send({"page": 1, "pageSize": 500, "totalRecords": len(recs), "records": recs})
-                if u.path == f"/{app}/api/v3/system/status": return self._send({"appName": app, "version": "4.0.0"})
+                if u.path == f"/{app}/api/v3/system/status": return self._send({"appName": app, "version": "4.0.0"}) if self.headers.get("X-Api-Key") == "test" else self._send({"error": "Unauthorized"}, 401)
             if u.path == "/sabnzbd/api":   # SABnzbd 5.1, recorded 2026-11-18
                 if q.get("apikey", [""])[0] != "test": return self._send({"status": False, "error": "API Key Incorrect"})
                 mode = q.get("mode", [""])[0]

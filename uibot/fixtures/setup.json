@@ -1,0 +1,262 @@
+{
+ "mount": {
+  "ok": true,
+  "lead": "Your library and your downloads sit on one mount here, so a download and its library file can be one file.",
+  "lines": [
+   {
+    "level": "ok",
+    "text": "The last scan found 1 library file that shares its bytes with a download: hardlinks work."
+   },
+   {
+    "level": "ok",
+    "text": "Radarr takes downloads and puts the library under one folder (/data), so it can link instead of copying."
+   },
+   {
+    "level": "ok",
+    "text": "Sonarr takes downloads and puts the library under one folder (/data), so it can link instead of copying."
+   }
+  ]
+ },
+ "discovered": {
+  "notes": [
+   "Radarr also uses Flood, which Dedupearr cannot read yet."
+  ],
+  "found": [
+   {
+    "app": "sonarr",
+    "kind": "Deluge",
+    "known": true,
+    "enabled": true,
+    "url": "http://127.0.0.1:44057/deluge",
+    "name": "Deluge",
+    "priority": 1
+   },
+   {
+    "app": "sonarr",
+    "kind": "NZBGet",
+    "known": true,
+    "enabled": true,
+    "url": "http://127.0.0.1:44057/nzbget",
+    "name": "Nzbget",
+    "priority": 1
+   },
+   {
+    "app": "sonarr",
+    "kind": "rTorrent",
+    "known": true,
+    "enabled": true,
+    "url": "http://127.0.0.1:44057/rtorrent/RPC2",
+    "name": "RTorrent",
+    "priority": 2
+   },
+   {
+    "app": "sonarr",
+    "kind": "Transmission",
+    "known": true,
+    "enabled": true,
+    "url": "http://127.0.0.1:44057/transmission/transmission/rpc",
+    "name": "Transmission",
+    "priority": 2
+   },
+   {
+    "app": "sonarr",
+    "kind": "SABnzbd",
+    "known": true,
+    "enabled": true,
+    "url": "http://127.0.0.1:44057/sabnzbd",
+    "name": "Sabnzbd",
+    "priority": 1
+   },
+   {
+    "app": "radarr",
+    "kind": "qBittorrent",
+    "known": true,
+    "enabled": false,
+    "url": "http://127.0.0.1:44057/qbit",
+    "name": "QBittorrent",
+    "priority": 3
+   },
+   {
+    "app": "radarr",
+    "kind": "rTorrent",
+    "known": true,
+    "enabled": false,
+    "url": "http://127.0.0.1:9/RPC2",
+    "name": "RTorrent",
+    "priority": 2
+   },
+   {
+    "app": "radarr",
+    "kind": "Flood",
+    "known": false,
+    "enabled": true,
+    "url": "http://127.0.0.1:44057",
+    "name": "Flood",
+    "priority": 1
+   }
+  ]
+ },
+ "connections": [
+  {
+   "name": "Sonarr",
+   "kind": "arr",
+   "fields": [
+    "SONARR_URL",
+    "SONARR_APIKEY"
+   ],
+   "url": "http://127.0.0.1:44057/sonarr",
+   "source": "container",
+   "locked": true,
+   "status": "ok",
+   "note": "3 imports in its history"
+  },
+  {
+   "name": "Radarr",
+   "kind": "arr",
+   "fields": [
+    "RADARR_URL",
+    "RADARR_APIKEY"
+   ],
+   "url": "http://127.0.0.1:44057/radarr",
+   "source": "container",
+   "locked": true,
+   "status": "ok",
+   "note": "1 imports in its history"
+  },
+  {
+   "name": "Whisparr",
+   "kind": "arr",
+   "fields": [
+    "WHISPARR_URL",
+    "WHISPARR_APIKEY"
+   ],
+   "url": "",
+   "source": "default",
+   "locked": false,
+   "status": "",
+   "note": ""
+  },
+  {
+   "name": "Sportarr",
+   "kind": "arr",
+   "fields": [
+    "SPORTARR_URL",
+    "SPORTARR_APIKEY"
+   ],
+   "url": "",
+   "source": "default",
+   "locked": false,
+   "status": "",
+   "note": ""
+  },
+  {
+   "name": "Lidarr",
+   "kind": "arr",
+   "fields": [
+    "LIDARR_URL",
+    "LIDARR_APIKEY"
+   ],
+   "url": "",
+   "source": "default",
+   "locked": false,
+   "status": "",
+   "note": ""
+  },
+  {
+   "name": "Deluge",
+   "kind": "torrent",
+   "fields": [
+    "DELUGE_URL",
+    "DELUGE_PASSWORD"
+   ],
+   "url": "http://127.0.0.1:44057/deluge",
+   "source": "container",
+   "locked": true,
+   "status": "ok",
+   "note": "4 torrents"
+  },
+  {
+   "name": "NZBGet",
+   "kind": "usenet",
+   "fields": [
+    "NZBGET_URL",
+    "NZBGET_USER",
+    "NZBGET_PASSWORD"
+   ],
+   "url": "http://127.0.0.1:44057/nzbget",
+   "source": "container",
+   "locked": true,
+   "status": "ok",
+   "note": "4 in history, 1 downloading"
+  },
+  {
+   "name": "qBittorrent",
+   "kind": "torrent",
+   "fields": [
+    "QBIT_URL",
+    "QBIT_USER",
+    "QBIT_PASSWORD"
+   ],
+   "url": "http://127.0.0.1:44057/qbit",
+   "source": "container",
+   "locked": true,
+   "status": "ok",
+   "note": "0 torrents"
+  },
+  {
+   "name": "rTorrent",
+   "kind": "torrent",
+   "fields": [
+    "RTORRENT_URL",
+    "RTORRENT_USER",
+    "RTORRENT_PASSWORD"
+   ],
+   "url": "http://127.0.0.1:44057/rtorrent/RPC2",
+   "source": "arr",
+   "locked": false,
+   "status": "ok",
+   "note": "2 torrents"
+  },
+  {
+   "name": "Transmission",
+   "kind": "torrent",
+   "fields": [
+    "TRANSMISSION_URL",
+    "TRANSMISSION_USER",
+    "TRANSMISSION_PASSWORD"
+   ],
+   "url": "http://127.0.0.1:44057/transmission/transmission/rpc",
+   "source": "arr",
+   "locked": false,
+   "status": "ok",
+   "note": "2 torrents"
+  },
+  {
+   "name": "SABnzbd",
+   "kind": "usenet",
+   "fields": [
+    "SABNZBD_URL",
+    "SABNZBD_APIKEY"
+   ],
+   "url": "http://127.0.0.1:44057/sabnzbd",
+   "source": "arr",
+   "locked": true,
+   "status": "ok",
+   "note": "2 in history, 0 downloading"
+  },
+  {
+   "name": "Auditarr",
+   "kind": "auditarr",
+   "fields": [
+    "AUDITARR_URL"
+   ],
+   "url": "",
+   "source": "default",
+   "locked": false,
+   "status": "",
+   "note": ""
+  }
+ ],
+ "writable": true,
+ "why_not": ""
+}

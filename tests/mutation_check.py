@@ -46,6 +46,11 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("client discovery from the arrs ignored", 'clients = {}; found = read_arr_clients();', 'clients = {}; found = [];'),
     ("remove fix moves a file rTorrent still holds", 'if no_remove_call(ci): return 409, {"error": no_remove_sentence(ci)}', 'if False: return 409, {}'),
     ("extras called something to decide", 'if code == "DOWNLOAD_UNMATCHED" and not (is_usenet(ci) and ci.get("finished")) and (xk := extra_kind(r["path"])):', 'if False and (xk := ""):'),
+    ("settings: the container's value no longer wins", 'if _envset(name) or (SETTABLE[name][0].startswith("conn:") and group_locked(name)): return', 'if False: return'),
+    ("settings: changed from outside the home network without a sign-in", 'if direct_local(ip, headers): return True, ""', 'return True, ""'),
+    ("settings: a new address keeps the old password", 'if new.get(u, "") != SETTINGS.get(u, "") and SETTINGS.get(u):', 'if False:'),
+    ("settings: FIX_MODE settable from the page", 'unknown = [k for k in list(changes) + reset if k not in SETTABLE]', 'unknown = [k for k in list(changes) + reset if k not in SETTABLE and k != "FIX_MODE"]'),
+    ("shared-mount test: two mounts called one", 'if set(lm) & set(dm) and same_dev:', 'if True:'),
     ("remove fix offered for a client it cannot tell", 'if v["fix_kind"] == "remove" and no_remove_call(ci):', 'if False:'),
 ]
 arg = sys.argv[1] if len(sys.argv) > 1 else str(datetime.date.today().timetuple().tm_yday % len(MUTANTS))
@@ -62,7 +67,7 @@ for name, old, new in todo:
     tmp = tempfile.mkdtemp(prefix="dedupearr-mut-")
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(tmp, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     open(os.path.join(tmp, "dedupearr.py"), "w").write(src.replace(old, new, 1))
-    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet", "client")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else []) + ([os.path.join(tmp, "tests", "digest.py")] if "morning message" in name else []) + ([os.path.join(tmp, "tests", "auditarr_link.py")] if "Auditarr" in name else [])
+    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet", "client")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else []) + ([os.path.join(tmp, "tests", "digest.py")] if "morning message" in name else []) + ([os.path.join(tmp, "tests", "auditarr_link.py")] if "Auditarr" in name else []) + ([os.path.join(tmp, "tests", "settings.py")] if name.startswith(("settings", "shared-mount")) else [])
     caught = any(subprocess.run([sys.executable, t], capture_output=True, text=True, timeout=600).returncode != 0 for t in suites)
     p = subprocess.run([sys.executable, suites[-1]], capture_output=True, text=True, timeout=600) if not caught else subprocess.CompletedProcess([], 1, "", "")
     print(f"{'PASS' if caught else 'FAIL'} mutant '{name}': {'caught by the suite' if caught else 'SURVIVED - the suite did not notice'}  ({[l for l in p.stdout.splitlines() if l.startswith('FAIL')][:2]})")

@@ -62,6 +62,11 @@ for i in state_json["items"]: i["path"] = i["path"].replace(DATA, "/data"); i["t
 state_json["roots"] = ["/data"]; [dk.__setitem__("root", "/data") for dk in state_json["disks"]]
 json.dump(state_json, open(os.path.join(fx, "state.json"), "w"), indent=1, default=str)
 j7["settings"]["SCAN_ROOTS"] = ["/data"]; json.dump(j7, open(os.path.join(fx, "about.json"), "w"), indent=1, default=str)
+st, set_json = get("/api/settings"); st2, setup_json = get("/api/setup")   # P1.7 / P4.1: the Settings and Setup tabs
+check("the Settings and Setup answers have the shape the page reads", st == st2 == 200 and set_json["items"] and "writable" in set_json and setup_json["mount"]["lead"] and setup_json["connections"], (st, st2))
+check("neither answer carries a password or key", '"test"' not in json.dumps([i for i in set_json["items"] if i["kind"] == "secret"]) and "test" not in json.dumps(setup_json).replace("/test", "").replace("latest", ""), "")
+_fix = lambda o: json.loads(json.dumps(o).replace(DATA, "/data").replace("(/tmp)", "(/data)"))
+json.dump(_fix(set_json), open(os.path.join(fx, "settings.json"), "w"), indent=1); json.dump(_fix(setup_json), open(os.path.join(fx, "setup.json"), "w"), indent=1)
 check("fixtures written for the UI bot", os.path.getsize(os.path.join(fx, "state.json")) > 2000)
 # 2026-11-14: a real fix answered 'Failed to fetch' on the page and nothing recorded why. A fix that stops with an error answers in words and lands in Recent errors
 _real = d.ui_fix; d.ui_fix = lambda c, path, **k: (_ for _ in ()).throw(RuntimeError("disk said no"))

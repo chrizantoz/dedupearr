@@ -6,7 +6,7 @@ const { JSDOM, VirtualConsole } = require("jsdom");
 const [,, uiPath, dataDir, nArg, seedArg] = process.argv; const N = +(nArg || 300); let seed = +(seedArg || 7);
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff; const pick = a => a[Math.floor(rnd() * a.length)];
 const html = fs.readFileSync(uiPath, "utf8");
-const data = {}; for (const n of ["state", "about"]) data[n] = JSON.parse(fs.readFileSync(path.join(dataDir, n + ".json"), "utf8"));
+const data = {}; for (const n of ["state", "about", "settings", "setup"]) { const f = path.join(dataDir, n + ".json"); data[n] = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : {}; }
 let current = { ...data }; const errors = [];
 const vc = new VirtualConsole(); vc.on("jsdomError", e => errors.push(String(e.message || e)));
 const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "http://dedupearr.test/", virtualConsole: vc, beforeParse(w) {
@@ -15,6 +15,8 @@ const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true
     if (opts && opts.method === "POST") return body({ ok: true, note: "test" });
     if (u.includes("api/state")) return body(current.state);
     if (u.includes("api/about")) return body(current.about);
+    if (u.includes("api/settings")) return body(current.settings);
+    if (u.includes("api/setup")) return body(current.setup);
     return body({}, 404);
   };
   w.setInterval = () => 0; w.HTMLElement.prototype.scrollIntoView = function () {};
@@ -40,12 +42,12 @@ process.on("uncaughtException", e => errors.push("uncaught: " + String(e && e.st
 (async () => {
   await sleep(300); const baseErrors = errors.length; const failures = [];
   for (let i = 0; i < N; i++) {
-    const log = []; const target = pick(["state", "state", "state", "about"]); let m = data[target];
+    const log = []; const target = pick(["state", "state", "state", "about", "settings", "setup"]); let m = data[target];
     for (let k = 0; k < 1 + Math.floor(rnd() * 3); k++) m = mangle(m, log);
     current = { ...data, [target]: m }; const before = errors.length;
     try {
       await w.eval("load()"); await sleep(15);
-      for (const t of ["files", "space", "about"]) { $(`nav button[data-tab=${t}]`).click(); await sleep(t === "about" ? 30 : 8); }
+      for (const t of ["files", "space", "about", "setup", "rules"]) { $(`nav button[data-tab=${t}]`).click(); await sleep(["about", "setup", "rules"].includes(t) ? 30 : 8); }
       for (const b of $$("#chips button[data-filter]")) { b.click(); await sleep(3); }
     } catch (e) { errors.push(String(e)); }
     if (errors.length > before) failures.push({ target, log, err: errors.slice(before).join(" | ").slice(0, 200) });

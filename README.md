@@ -112,7 +112,7 @@ Out of the box the page is open to whoever can reach the port, which at home mea
 
 ## ⚙️ Settings
 
-Phase 1 reads its settings from the environment; the About tab shows them (never a key or a password: there are none). A settings page comes with phase 2.
+Everything below can be set on the container. Most of it can also be set on the page: arr and client addresses on the **Setup** tab (with **Test** and the shared-mount test), the rules on the **Settings** tab. A value set on the container always wins and shows as locked on the page; fixes (`FIX_MODE`), the folders to scan and the holding-bin days are container-only. Page settings live in the database in the config folder. Without a sign-in, only a browser on your own network may change them.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |

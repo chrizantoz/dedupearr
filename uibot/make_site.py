@@ -9,7 +9,8 @@ os.makedirs(os.path.join(OUT, "screenshots"), exist_ok=True)
 for f in os.listdir(os.path.join(ROOT, "docs", "screenshots")): shutil.copy(os.path.join(ROOT, "docs", "screenshots", f), os.path.join(OUT, "screenshots", f))
 
 # 1. the static demo: ui.html + the recorded fixtures + a fetch shim (Ignore and Scan now answer like the real server, nothing persists)
-fx = {n: json.load(open(os.path.join(ROOT, "uibot", "fixtures", n + ".json"))) for n in ("state", "about")}
+fx = {n: json.load(open(os.path.join(ROOT, "uibot", "fixtures", n + ".json"))) for n in ("state", "about", "settings", "setup")}
+for k in ("settings", "setup"): fx[k]["writable"] = False; fx[k]["why_not"] = "This is a static copy of the page: nothing can be saved here."
 fx["state"]["sandbox"] = True; fx["state"]["sandbox_note"] = "This is a static copy of the page on recorded data; nothing runs behind it and nothing you click is kept. The live demo scans a real fake disk."
 fx["about"]["health"].append({"level": "ok", "text": "Static demo: the page on recorded answers, published by GitHub Pages."})
 shim = """<script>
@@ -17,8 +18,8 @@ const __FX=%s;const __ok=(o,s=200)=>({ok:s<400,status:s,json:async()=>JSON.parse
 window.fetch=async(u,o)=>{u=String(u);if(o&&o.method==='POST'){let b={};try{b=JSON.parse(o.body||'{}')}catch(e){}
  if(u.includes('api/unignore')){const i=__FX.state.items.find(i=>i.path===b.path);if(i){i.ignored=false;i.needs_you=true}return __ok({ok:true,note:'back in Needs you'})}
  if(u.includes('api/ignore')){const i=__FX.state.items.find(i=>i.path===b.path);if(i){i.ignored=true;i.needs_you=false}return __ok({ok:true,note:'hidden from Needs you; it stays in Everything'})}
- if(u.includes('api/scan'))return __ok({ok:true,note:'this static copy cannot scan; the live demo at %s can'});return __ok({error:'not here'},404)}
- if(u.includes('api/state'))return __ok(__FX.state);if(u.includes('api/about'))return __ok(__FX.about);return __ok({},404)};
+ if(u.includes('api/setup/test'))return __ok({ok:false,note:'This static copy cannot reach any app; the live demo can.'});if(u.includes('api/scan'))return __ok({ok:true,note:'this static copy cannot scan; the live demo at %s can'});return __ok({error:'not here'},404)}
+ if(u.includes('api/state'))return __ok(__FX.state);if(u.includes('api/about'))return __ok(__FX.about);if(u.includes('api/settings'))return __ok(__FX.settings);if(u.includes('api/setup'))return __ok(__FX.setup);return __ok({},404)};
 </script>""" % (json.dumps(fx, separators=(",", ":")), LIVE)
 ui = open(os.path.join(ROOT, "ui.html"), encoding="utf-8").read().replace("<body>", "<body>" + shim, 1).replace("<title>Dedupearr</title>", "<title>Dedupearr · static demo</title>")
 open(os.path.join(OUT, "demo.html"), "w", encoding="utf-8").write(ui)

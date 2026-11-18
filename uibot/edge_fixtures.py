@@ -3,7 +3,7 @@ and a scan that failed. Writes uibot/fixtures-edge/<name>/{state,about}.json plu
 Usage: python3 uibot/edge_fixtures.py"""
 import copy, json, os, random
 HERE = os.path.dirname(os.path.abspath(__file__)); SRC = os.path.join(HERE, "fixtures"); DST = os.path.join(HERE, "fixtures-edge")
-base = {n: json.load(open(os.path.join(SRC, n + ".json"))) for n in ("state", "about")}
+base = {n: json.load(open(os.path.join(SRC, n + ".json"))) for n in ("state", "about", "settings", "setup")}
 def kinds(st):
     """Per-kind totals recomputed from the items, the way the app does it, so an edge world never carries the base world's totals."""
     out = {}
@@ -54,6 +54,10 @@ e = copy.deepcopy(base); s = e["state"]; a = e["about"]
 s["last_run"] = dict(s["last_run"], note="failed: [Errno 13] Permission denied: '/data/torrents'", files=0)
 a["health"] = [{"level": "warn", "text": "The last scan failed: [Errno 13] Permission denied: '/data/torrents'"}, {"level": "warn", "text": "Scan root /data/usenet is not mounted or not a folder."}, {"level": "warn", "text": "3 errors in the last 24 hours."}]
 a["errors"] = [{"at": 1794438000, "text": "cannot list /data/torrents: [Errno 13] Permission denied"}] * 3
+# errors world: the page may not change settings (no sign-in, reached through a proxy), and a rule is set on the container
+for k in ("settings", "setup"): e[k]["writable"] = False; e[k]["why_not"] = "Settings can only be changed from your own network while the page has no sign-in. Turn on Protect the page (About tab) to change them from anywhere."
+next(i for i in e["settings"]["items"] if i["name"] == "RECYCLE_DAYS").update(source="container", locked=True)
+e["setup"]["mount"] = {"ok": False, "lead": "Your library (/data/media) and your downloads (/data/torrents) are two separate mounts here, so they can never be one file, and Make them one file cannot work.", "lines": [{"level": "warn", "text": "The one-line change: mount the folder on your server that holds both once, for example -v /mnt/user/data:/data, instead of one -v line for each, and point Dedupearr's scanned folders at the folders inside it."}]}
 write("errors", e)
 # errors world also checks the home-network case: sign-in on but the LAN let you in, so no Sign out
 e["state"]["auth"] = {"enabled": True, "via": "lan", "user": "owner", "source": "env", "local_no_login": True, "local_env": False, "warning": "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."}; write("errors", e)
@@ -68,6 +72,7 @@ for i in s["items"]: i["bulk"] = bool(i.get("fixable") and i.get("fix_kind") in 
 if sum(1 for i in s["items"] if i["bulk"] and i.get("needs_you")) < 2: raise SystemExit("live world: the base fixtures have fewer than two plain moves for 'Move all shown'")
 # 2026-11-15 (#26): a real name full of brackets and dashes made a selector built from the path spin forever in the bot. The first row a bot presses carries such a name
 nasty = next(i for i in s["items"] if i.get("fixable") and i.get("needs_you") and i.get("fix_kind") != "relink"); nasty["path"] = "/data/torrents/tv/[Grp] Some Show/[Grp] - Some Show -S02E013 (040) [1080p][ABCD1234] - - -.mkv"; nasty["wasted"] = max(i.get("wasted", 0) for i in s["items"]) + 1; s["items"].sort(key=lambda i: -i.get("wasted", 0))
+next(i for i in e["settings"]["items"] if i["name"] == "RECYCLE_DAYS").update(source="page", value="21")   # a rule saved on the page: 'Use the default' appears
 pk = next(i for i in s["items"] if i.get("fixable") and i.get("fix_kind") == "remove" and (i.get("client") or {}).get("client") == "Deluge"); pk["pack"] = {"files": 3, "stay": 1, "size_h": "12 GB"}   # P3.5: a season pack goes as a whole
 rl = next((i for i in s["items"] if i.get("fixable") and i.get("fix_kind") == "relink"), None)
 if not rl: raise SystemExit("live world: the base fixtures have no identical copy to relink")

@@ -41,6 +41,8 @@ The left column is the internal code (handy when searching the code or the API);
 
 - **Files**: lead sentence (library size, waste, undecided downloads), five tiles that double as filters, filter chips, a row of kind buttons (TV shows, Anime, Movies, Adult, Sports, Music, Other) whose counts follow the filter, search, one row per file with its kind tag, chip, sentence, evidence, size, wasted space and an Ignore button.
 - **Space**: one bar for the share (library · waste · to decide · other · free) a table of every verdict with count and space, and a table per kind of media (files, need a decision, wasted).
+- **Setup** (P4.1): the shared-mount test ("Can a library file and a download be one file?", from Dedupearr's own mounts and each arr's import folders, with the one-line change when the answer is no), one block per arr and download client with address, user, password or key (never sent back), source, last answer, **Save** and **Test**, and what the arrs list on their Download Clients page.
+- **Settings** (P1.7): the rules (recycle-bin days, seeding ratio, days and rule, smallest file, scan time, library/download/recycle folders and folder names), saved in the config folder's database; a value set on the container wins and is locked; fixes, scanned folders and holding days stay container-only.
 - **About**: health (last scan, errors in the last 24 hours, read-only reminder), settings in force, scan history with durations, recent errors, log.
 
 ## 🔘 The buttons
@@ -70,4 +72,6 @@ Phase 3 adds: Relink, Remove old torrent, Empty bin, Move to holding bin, Undo, 
 | `POST /api/ignore` `{"path": …}` / `POST /api/unignore` | hide or show a row |
 | `POST /api/fix` `{"path": …}` | the fix plan for a row (dry run: steps and space freed; refused during a scan or when the seeding rule says wait) |
 | `GET /api/actions` | the actions log |
+| `GET /api/settings` / `POST /api/settings` `{"set": {NAME: value}, "reset": [NAME]}` | every setting with its source and lock (passwords and keys never sent back) / save; refused for a value set on the container, and without a sign-in from anywhere but your own network |
+| `GET /api/setup` / `POST /api/setup/test` `{"name": "Sonarr"}` | the shared-mount test, the arrs' client lists and each connection's last answer / ask one app with what is saved, read-only |
 | `GET /health` | 200 when the last scan is recent and succeeded, else 503 |

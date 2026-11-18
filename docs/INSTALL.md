@@ -6,7 +6,7 @@ You need: a machine that runs Docker (Unraid, a NAS, a Linux box) and the share 
 
 Dedupearr tells a hardlink from a copy by looking at the files themselves, so it must see your library **and** your download folder through **one** mount. On most setups that is one share such as `/mnt/user/media` (Unraid) or `/srv/data` (Linux) that holds `media/` and `torrents/` side by side; mount that share at `/data` inside the container, read-only.
 
-If your library and your downloads live on two different shares, hardlinks between them cannot exist, so every import is a copy. Dedupearr will show that as "Stored twice" on every file. The fix is in the arr guides: one share, two folders ([TRaSH Guides: hardlinks](https://trash-guides.info/File-and-Folder-Structure/Hardlinks-and-Instant-Moves/)).
+If your library and your downloads live on two different shares, hardlinks between them cannot exist, so every import is a copy. Dedupearr will show that as "Stored twice" on every file. After the first scan the **Setup** tab runs the shared-mount test for you: it says whether a library file and a download can be one file, from Dedupearr's own mounts and from each arr's import history, and gives the one-line change when they cannot. The fix is in the arr guides: one share, two folders ([TRaSH Guides: hardlinks](https://trash-guides.info/File-and-Folder-Structure/Hardlinks-and-Instant-Moves/)).
 
 ## Unraid
 
@@ -41,6 +41,7 @@ Both apps read the same share and do not interfere in phase 1. When Dedupearr's 
 
 - The **Files** tab opens on *Needs a decision*: second copies, downloads with no match, old recycle-bin files and unsorted folders. Everything that is fine is one filter away.
 - Each row has one plain sentence and an **evidence** link that shows the inodes, link counts, sizes and checksums behind it.
-- Phase 1 has no fix buttons. *Ignore* hides a row you have decided about. Act on the rest by hand if you want to; when phase 3 arrives, every fix runs as a dry run first and can be undone for 14 days.
+- Connect Sonarr and Radarr on the **Setup** tab if you did not set them on the container: Dedupearr then finds their download clients by itself; type the clients' passwords there and press **Test**.
+- Phase 1 had no fix buttons. *Ignore* hides a row you have decided about. Act on the rest by hand if you want to; when phase 3 arrives, every fix runs as a dry run first and can be undone for 14 days.
 
 The full tour of the page is in [USER-GUIDE.md](USER-GUIDE.md).

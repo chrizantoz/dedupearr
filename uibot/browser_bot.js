@@ -7,7 +7,7 @@ const { chromium } = require("playwright");
 const [,, uiPath, dataDir] = process.argv;
 const LIVE = /^https?:\/\//.test(dataDir || ""); const WRITES = !LIVE || process.env.ALLOW_WRITES === "1";
 const html = LIVE ? "" : fs.readFileSync(uiPath, "utf8");
-const fixtures = {}; if (!LIVE) for (const n of ["state", "about"]) fixtures[n] = fs.readFileSync(path.join(dataDir, n + ".json"), "utf8");
+const fixtures = {}; if (!LIVE) for (const n of ["state", "about", "settings", "setup"]) if (fs.existsSync(path.join(dataDir, n + ".json"))) fixtures[n] = fs.readFileSync(path.join(dataDir, n + ".json"), "utf8");
 const ignored = new Set();   // the fake server remembers Ignore, like the real one
 const server = http.createServer((req, res) => {
   const u = req.url.split("?")[0]; res.setHeader("Content-Type", "application/json");
@@ -17,6 +17,8 @@ const server = http.createServer((req, res) => {
     return req.on("end", () => {
       let b = {}; try { b = JSON.parse(raw || "{}"); } catch (e) { b = {}; }
       if (u === "/api/ignore") ignored.add(b.path); if (u === "/api/unignore") ignored.delete(b.path);
+      if (u === "/api/settings") { const st = JSON.parse(fixtures.settings || "{}"); for (const [k, v] of Object.entries(b.set || {})) { const i = (st.items || []).find(x => x.name === k); if (i) { i.value = v; i.source = "page"; } } fixtures.settings = JSON.stringify(st); return res.end(JSON.stringify({ ok: true, note: "Saved. The next scan uses it; press Scan now to see the change." })); }
+      if (u === "/api/setup/test") return res.end(JSON.stringify({ ok: true, note: `${b.name} answered (version 4.0.0).` }));
       res.end(JSON.stringify({ ok: true, note: u.includes("unignore") ? "back in Needs you" : u.includes("ignore") ? "hidden from Needs you; it stays in Everything" : "scan started; the page updates itself" }));
     });
   }
@@ -84,6 +86,23 @@ const rawCode = /\b[A-Z]{3,}_[A-Z_]{3,}\b/;
     const healthText = await page.textContent("#health");
     check(`${label}: persona: About names every client and arr the last scan asked`, asked.every(n => healthText.includes(n)), asked.filter(n => !healthText.includes(n)).join(", "));
     await page.screenshot({ path: path.join(__dirname, "screens", `about-${label}.png`), fullPage: true });
+    // persona 5 (P4.1, 2026-11-18): "can my library and my downloads be one file, and if not, what do I change?" -> the Setup tab answers in a sentence
+    await page.locator("nav button[data-tab=setup]").click(); await page.waitForFunction(() => !/Loading/.test(document.querySelector("#mount-lead").textContent), null, { timeout: 10000 }).catch(() => {});
+    const ml = await page.textContent("#mount-lead");
+    check(`${label}: persona: the Setup tab answers 'can my library and downloads be one file?' in a sentence`, /one mount|separate mounts|different disks|Scan first|no library files|no downloads/.test(ml), ml);
+    check(`${label}: persona: every connection on Setup can be tested`, (await page.locator("#conns .conn").count()) === (await page.locator("#conns button[data-test]").count()) && (await page.locator("#conns .conn").count()) > 0);
+    const t1 = page.locator("#conns button[data-test]").first();
+    if (WRITES || !LIVE) { await t1.click(); await page.waitForFunction(() => /✓|✗/.test((document.querySelector("#conns .res") || {}).textContent || ""), null, { timeout: 15000 }).catch(() => {}); check(`${label}: persona: Test answers beside its button`, /✓|✗/.test(await page.locator("#conns .res").first().textContent()), await page.locator("#conns .res").first().textContent()); }
+    await page.screenshot({ path: path.join(__dirname, "screens", `setup-${label}.png`), fullPage: true });
+    // persona 6 (P1.7): "keep recycle-bin files 60 days instead of 30" -> the Settings tab changes the rule and says it is saved (a write; skipped on a live server unless allowed)
+    await page.locator("nav button[data-tab=rules]").click(); await page.waitForSelector("#rules-form .setrow", { timeout: 10000 }).catch(() => {});
+    const rd = page.locator("#rules-form [data-set=RECYCLE_DAYS]");
+    if (WRITES && await rd.count() && await rd.isEnabled()) {
+      await rd.fill("60"); await page.locator("#rules-save").click(); await page.waitForFunction(() => /Saved/.test(document.querySelector("#toast").textContent), null, { timeout: 10000 }).catch(() => {});
+      check(`${label}: persona: a changed rule is saved and the page says so`, /Saved/.test(await page.textContent("#toast")) && (await rd.inputValue()) === "60", await page.textContent("#toast"));
+      if (!LIVE) { const st = JSON.parse(fixtures.settings); const i = st.items.find(x => x.name === "RECYCLE_DAYS"); i.value = "30"; i.source = "default"; fixtures.settings = JSON.stringify(st); }
+    } else check(`${label}: persona: the recycle-bin rule is on the Settings tab`, (await rd.count()) === 1);
+    await page.screenshot({ path: path.join(__dirname, "screens", `settings-${label}.png`), fullPage: true });
     await page.emulateMedia({ colorScheme: "dark" }); await page.goto(base); await page.locator("nav button[data-tab=files]").click(); await page.waitForSelector("#rows tr", { timeout: 15000 });   // dark variant for the README and the banner (the page remembers the last tab, so go back to Files)
     await page.screenshot({ path: path.join(__dirname, "screens", `files-${label}-dark.png`), fullPage: true });
     await page.locator("nav button[data-tab=space]").click(); await page.waitForTimeout(150); await page.screenshot({ path: path.join(__dirname, "screens", `space-${label}-dark.png`), fullPage: true });
