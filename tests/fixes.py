@@ -100,6 +100,11 @@ check("remove: a torrent already gone from the client needs no client call; the 
 for key, who in (("unmatched", "no client"), ("usenet", "NZBGet")):
     rw = row(P[key]); code, obj = d.ui_fix(c, P[key]) if rw and rw["fix_kind"] == "remove" else (0, rw)
     check(f"remove: a leftover with {who} goes to the holding bin and no client is told anything", code == 200 and not os.path.exists(P[key]) and len(world["_removed"]) == n_rm and "_nz_edits" not in world, (code, obj))
+# P2.3 (2026-11-18): rTorrent is read, but Dedupearr cannot remove torrents from it yet, so its leftover keeps its file where rTorrent expects it
+rl = row(P["rt_left"]); vrl = dict(c.execute("SELECT * FROM verdict WHERE path=?", (P["rt_left"],)).fetchone())
+code, obj = d.ui_fix(c, P["rt_left"]); code2, obj2 = d.remove_fix(c, vrl, ["x"])
+check("remove: an rTorrent leftover past the rule has no button, the fix is refused in words and the file stays where rTorrent expects it",
+      rl and rl["code"] == "LEFTOVER" and not rl["fixable"] and code == 400 and code2 == 409 and "cannot remove torrents" in obj2.get("error", "") and os.path.exists(P["rt_left"]) and "_writes" not in world, (rl and rl["fixable"], code, code2, obj2))
 d.client_remove({"client": "qBittorrent", "id": "abc123", "name": "x"}); check("remove: qBittorrent is told to keep the files too", world["_removed"][-1] == ("abc123", "false"), world["_removed"][-1])
 # ---- 'Move all shown' (2026-11-14): many plain moves in one press, each through the same checks; a torrent removal never rides along
 hid = next(h["id"] for h in d.holding(c)["items"] if h["orig"] == scary); d.restore_held(c, hid); world["deluge"].append(dict(T0))

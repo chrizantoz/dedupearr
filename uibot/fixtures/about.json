@@ -7,7 +7,7 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-17 00:00, 24 files in 0 s."
+   "text": "Last scan 2026-11-18 04:12, 31 files in 0 s."
   },
   {
    "level": "ok",
@@ -23,15 +23,31 @@
   },
   {
    "level": "ok",
-   "text": "Radarr: 0 imports in its history"
+   "text": "Radarr: 1 imports in its history"
   },
   {
    "level": "ok",
-   "text": "Sonarr: 2 imports in its history"
+   "text": "SABnzbd: 2 in history, 0 downloading"
+  },
+  {
+   "level": "ok",
+   "text": "Sonarr: 3 imports in its history"
+  },
+  {
+   "level": "ok",
+   "text": "Transmission: 2 torrents"
   },
   {
    "level": "ok",
    "text": "qBittorrent: 0 torrents"
+  },
+  {
+   "level": "ok",
+   "text": "rTorrent: 2 torrents"
+  },
+  {
+   "level": "ok",
+   "text": "Radarr also uses Flood, which Dedupearr cannot read yet."
   },
   {
    "level": "ok",
@@ -54,34 +70,37 @@
   "SEED_RULE": "auto",
   "CLIENT_PATH_MAP": [],
   "FIX_MODE": "dryrun",
-  "HOLDING_DIR": "/tmp/dedupearr-api-cso_6n7u/data/.dedupearr-holding",
+  "HOLDING_DIR": "/tmp/dedupearr-api-uo12e_ej/data/.dedupearr-holding",
   "HOLD_DAYS": 14,
   "connections": {
-   "sonarr": "http://127.0.0.1:59723/sonarr",
-   "radarr": "http://127.0.0.1:59723/radarr",
+   "sonarr": "http://127.0.0.1:49011/sonarr",
+   "radarr": "http://127.0.0.1:49011/radarr",
    "whisparr": "not set",
    "sportarr": "not set",
    "lidarr": "not set",
-   "Deluge": "http://127.0.0.1:59723/deluge",
-   "NZBGet": "http://127.0.0.1:59723/nzbget",
-   "qBittorrent": "http://127.0.0.1:59723/qbit",
+   "Deluge": "http://127.0.0.1:49011/deluge",
+   "NZBGet": "http://127.0.0.1:49011/nzbget",
+   "qBittorrent": "http://127.0.0.1:49011/qbit",
+   "rTorrent": "not set",
+   "Transmission": "not set",
+   "SABnzbd": "not set",
    "Auditarr": "not set"
   }
  },
  "runs": [
   {
    "id": 1,
-   "started": 1794891605.8149943,
-   "finished": 1794891605.994471,
-   "files": 24,
-   "bytes": 75497472,
-   "wasted": 31457280,
+   "started": 1794993148.8296652,
+   "finished": 1794993149.0212696,
+   "files": 31,
+   "bytes": 148897792,
+   "wasted": 66060288,
    "note": "ok"
   }
  ],
  "log": [
-  "2026-11-17 00:00:05 Dedupearr dev listening on :46433",
-  "2026-11-17 00:00:05 scan done: 24 files, 75.5 MB, 31.5 MB that can come back"
+  "2026-11-18 04:12:28 Dedupearr dev listening on :59147",
+  "2026-11-18 04:12:29 scan done: 31 files, 148.9 MB, 66.1 MB that can come back"
  ],
  "errors": [],
  "links": {

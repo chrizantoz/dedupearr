@@ -113,7 +113,7 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   const busyChips = $$("#rows [data-fixing]");
   check("a fix that is still comparing two files shows its progress on its own row instead of a button", fixing && items.slice(0, 500).some(i => i.path === fixing && i.needs_you) ? busyChips.length === 1 && /comparing both files… \d+%/.test(busyChips[0].textContent) && !busyChips[0].closest("tr").querySelector("button[data-fix]") : busyChips.length === 0, `${busyChips.length} chips, fixing=${fixing}`);
   check("'Move to holding bin' appears exactly on rows whose fix is switched on", $$("#rows button[data-live='1']").length === liveRows, `${$$("#rows button[data-live='1']").length} vs ${liveRows}`);
-  const rmRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind) && i.fix_kind === "remove" && i.client && i.client.client !== "NZBGet").map(i => i.path);
+  const rmRows = items.slice(0, 500).filter(i => i.fixable && mode === "on" && live.has(i.fix_kind) && i.fix_kind === "remove" && i.client && !i.client.usenet && !["NZBGet", "SABnzbd"].includes(i.client.client)).map(i => i.path);
   const rmBtns = $$("#rows button[data-live='1']").filter(b => /Remove torrent/.test(b.textContent));
   check("a live fix that removes a torrent says so on the button and in its hint (files kept, Put back returns the file only)", rmBtns.length === rmRows.length && rmBtns.every(b => rmRows.includes(b.dataset.fix) && /files are kept/.test(b.title) && /not the torrent/.test(b.title)), `${rmBtns.length} vs ${rmRows.length}`);
   const packRows = items.slice(0, 500).filter(i => rmRows.includes(i.path) && i.pack);

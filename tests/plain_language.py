@@ -19,6 +19,11 @@ check("the unmatched sentence says who decides next", "phase 2" in d.sentence({"
 for st, want in (("failed", "marked it failed"), ("finished", "finished it"), ("deleted/manual", "lists it as deleted, manual")):   # a finished usenet job nobody imported (seen on a real server 2026-11-12)
     s = d.sentence({"code": "DOWNLOAD_UNMATCHED", "size": 11_300_000_000, "twin": None, "client": {"client": "NZBGet", "state": st, "finished": True}})
     check(f"usenet job NZBGet {st}: says so, says usenet does not seed, never says seeding or torrent, ends with a full stop", want in s and "does not seed" in s and "11.3 GB" in s and "seeding it" not in s and "torrent" not in s and s.endswith(".") and not CODE.search(s), s)
+s = d.sentence({"code": "DOWNLOAD_UNMATCHED", "size": 2_000_000_000, "twin": None, "client": {"client": "SABnzbd", "usenet": True, "state": "failed", "finished": True}})   # P2.3
+check("usenet job SABnzbd failed: names SABnzbd, says usenet does not seed, never torrent words", "SABnzbd marked it failed" in s and "does not seed" in s and "torrent" not in s and s.endswith("."), s)
+for cl in ("rTorrent", "Transmission"):
+    s = d.no_remove_sentence({"client": cl})
+    check(f"{cl} cannot be told to remove: the sentence says so, says what to do there and what happens next", f"remove the torrent in {cl}".lower() in s.lower() and "keep its files" in s and "next scan" in s and s.endswith(".") and not CODE.search(s), s)
 check("sizes read like a person says them", d.human(0) == "0 B" and d.human(999) == "999 B" and d.human(48_200_000_000) == "48.2 GB" and d.human(1_000_000_000_000) == "1 TB", [d.human(x) for x in (0, 999, 48_200_000_000, 1_000_000_000_000)])
 check("friendly title: scene name", d.friendly_title("/x/Dune.Part.Two.2024.2160p.UHD.BluRay.x265-GRP.mkv") == "Dune Part Two 2024")
 check("friendly title: keeps the episode number", d.friendly_title("/x/Shogun.S01E05.1080p.WEB.h264-GRP.mkv") == "Shogun S01E05")

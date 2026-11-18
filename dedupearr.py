@@ -61,7 +61,14 @@ def _env(k, d=""): return os.environ.get(k, d).strip()
 ARRS = {a: {"url": _env(f"{a.upper()}_URL").rstrip("/"), "key": _env(f"{a.upper()}_APIKEY")} for a in ("sonarr", "radarr", "whisparr", "sportarr", "lidarr")}   # every Sonarr/Radarr-shaped app with a v3 history
 CLIENTS = {"Deluge": {"url": _env("DELUGE_URL").rstrip("/"), "password": _env("DELUGE_PASSWORD")},
            "NZBGet": {"url": _env("NZBGET_URL").rstrip("/"), "user": _env("NZBGET_USER"), "password": _env("NZBGET_PASSWORD")},
-           "qBittorrent": {"url": _env("QBIT_URL").rstrip("/"), "user": _env("QBIT_USER"), "password": _env("QBIT_PASSWORD")}}
+           "qBittorrent": {"url": _env("QBIT_URL").rstrip("/"), "user": _env("QBIT_USER"), "password": _env("QBIT_PASSWORD")},
+           "rTorrent": {"url": _env("RTORRENT_URL").rstrip("/"), "user": _env("RTORRENT_USER"), "password": _env("RTORRENT_PASSWORD")},   # P2.3: the XML-RPC address, e.g. http://host:8000/RPC2
+           "Transmission": {"url": _env("TRANSMISSION_URL").rstrip("/"), "user": _env("TRANSMISSION_USER"), "password": _env("TRANSMISSION_PASSWORD")},   # http://host:9091 (or the full .../transmission/rpc)
+           "SABnzbd": {"url": _env("SABNZBD_URL").rstrip("/"), "key": _env("SABNZBD_APIKEY")}}
+USENET = {"NZBGet", "SABnzbd"}   # usenet does not seed: a finished job holds nothing
+def is_usenet(ci): return bool(ci) and (ci.get("client") in USENET or ci.get("usenet") is True)
+CLIENT_SOURCE = {n: "container" for n, c in CLIENTS.items() if c["url"]}   # where each address came from: container | page | the arr that listed it (P2.0)
+DISCOVERED = []   # P2.0: what the arrs' Download Clients pages list, for About and the Setup page
 SEED_MIN_RATIO = float(_env("SEED_MIN_RATIO", "1.0") or 1.0); SEED_MIN_DAYS = float(_env("SEED_MIN_DAYS", "14") or 14)
 SEED_RULE = _env("SEED_RULE", "auto").lower()   # "auto" (default): private torrents need ratio AND days, public ones either; "both" / "either" for every torrent
 CLIENT_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("CLIENT_PATH_MAP").split(",") if "=" in x]   # clientpath=ourpath when a client sees the files under another path
@@ -87,21 +94,24 @@ def http_json(url, data=None, headers=None, cj=None, timeout=None, form=False):
     with opener.open(req, timeout=timeout) as r: raw = r.read().decode("utf-8", "replace")
     return json.loads(raw) if raw.strip() else {}
 
-def deluge_session():
+ACTIVE = {}   # kind -> the settings the last scan used for it (from here, the page, or an arr's list); the fixes ask the same client
+def active_cfg(kind): return ACTIVE.get(kind) or CLIENTS[kind]
+def deluge_session(cfg=None):
     """A signed-in call(method, params) for Deluge's web JSON."""
-    cfg = CLIENTS["Deluge"]; cj = http.cookiejar.CookieJar(); u = cfg["url"] + "/json"; n = [0]
+    cfg = cfg or active_cfg("Deluge"); cj = http.cookiejar.CookieJar(); u = cfg["url"] + "/json"; n = [0]
     def call(m, params):
         n[0] += 1; r = http_json(u, {"method": m, "params": params, "id": n[0]}, cj=cj)
         if r.get("error"): raise RuntimeError(f"{m}: {r['error'].get('message') if isinstance(r['error'], dict) else r['error']}")
         return r.get("result")
-    if not call("auth.login", [cfg["password"]]): raise RuntimeError("the web password was refused")
+    if not call("auth.login", [cfg.get("password") or ""]): raise RuntimeError("the web password was refused")
     if not call("web.connected", []):
         hosts = call("web.get_hosts", []) or []
         if hosts: call("web.connect", [hosts[0][0]])
     return call
-def read_deluge():
-    if not CLIENTS["Deluge"]["url"]: return {}
-    call = deluge_session()
+def read_deluge(cfg=None, timeout=None):
+    cfg = cfg or active_cfg("Deluge")
+    if not cfg["url"]: return {}
+    call = deluge_session(cfg)
     fields = ["name", "save_path", "state", "ratio", "seeding_time", "time_added", "label", "total_size", "is_finished", "progress", "files", "private"]
     ts = call("core.get_torrents_status", [{}, fields]) or {}
     out = {}
@@ -112,32 +122,32 @@ def read_deluge():
                                                                             "private": t.get("private") if isinstance(t.get("private"), bool) else None}
     CLIENT_STATUS["Deluge"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
 
-def read_nzbget():
-    cfg = CLIENTS["NZBGet"]
+def read_nzbget(cfg=None, timeout=None):
+    cfg = cfg or active_cfg("NZBGet")
     if not cfg["url"]: return {}
-    H = {"Authorization": "Basic " + base64.b64encode(f"{cfg['user']}:{cfg['password']}".encode()).decode()}; u = cfg["url"] + "/jsonrpc"
-    hist = http_json(u, {"method": "history", "params": [False]}, H).get("result") or []
-    groups = http_json(u, {"method": "listgroups", "params": [0]}, H).get("result") or []
+    H = {"Authorization": "Basic " + base64.b64encode(f"{cfg.get('user') or ''}:{cfg.get('password') or ''}".encode()).decode()}; u = cfg["url"] + "/jsonrpc"
+    hist = http_json(u, {"method": "history", "params": [False]}, H, timeout=timeout).get("result") or []
+    groups = http_json(u, {"method": "listgroups", "params": [0]}, H, timeout=timeout).get("result") or []
     out = {}
     for h in hist:   # a usenet download is a folder; any file under it belongs to it (keys end with '/')
         d = map_client_path(h.get("FinalDir") or h.get("DestDir") or "")
         if d: out[d.rstrip("/") + "/"] = {"client": "NZBGet", "name": h.get("Name", ""), "state": "finished" if str(h.get("Status", "")).startswith("SUCCESS") else "failed" if "FAILURE" in str(h.get("Status", "")) else str(h.get("Status", "")).lower(),
-                                           "ratio": 0.0, "seeding_days": 0.0, "label": h.get("Category") or "", "finished": True, "id": h.get("NZBID")}
+                                           "ratio": 0.0, "seeding_days": 0.0, "label": h.get("Category") or "", "finished": True, "id": h.get("NZBID"), "usenet": True}
     for g in groups:
         d = map_client_path(g.get("DestDir") or "")
-        if d: out[d.rstrip("/") + "/"] = {"client": "NZBGet", "name": g.get("NZBName", ""), "state": "downloading", "ratio": 0.0, "seeding_days": 0.0, "label": g.get("Category") or "", "finished": False, "id": g.get("NZBID")}
+        if d: out[d.rstrip("/") + "/"] = {"client": "NZBGet", "name": g.get("NZBName", ""), "state": "downloading", "ratio": 0.0, "seeding_days": 0.0, "label": g.get("Category") or "", "finished": False, "id": g.get("NZBID"), "usenet": True}
     CLIENT_STATUS["NZBGet"] = {"ok": True, "n": len(hist), "note": f"{len(hist)} in history, {len(groups)} downloading"}; return out
 
-def qbit_session():
+def qbit_session(cfg=None):
     """(base url, cookie jar) of a signed-in qBittorrent session."""
-    cfg = CLIENTS["qBittorrent"]; cj = http.cookiejar.CookieJar(); base = cfg["url"] + "/api/v2"
-    req = urllib.request.Request(base + "/auth/login", data=urllib.parse.urlencode({"username": cfg["user"], "password": cfg["password"]}).encode(), headers={"Referer": cfg["url"]})
+    cfg = cfg or active_cfg("qBittorrent"); cj = http.cookiejar.CookieJar(); base = cfg["url"] + "/api/v2"
+    req = urllib.request.Request(base + "/auth/login", data=urllib.parse.urlencode({"username": cfg.get("user") or "", "password": cfg.get("password") or ""}).encode(), headers={"Referer": cfg["url"]})
     if "Ok" not in urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj)).open(req, timeout=30).read().decode(): raise RuntimeError("the login was refused")
     return base, cj
-def read_qbit():
-    cfg = CLIENTS["qBittorrent"]
+def read_qbit(cfg=None, timeout=None):
+    cfg = cfg or active_cfg("qBittorrent")
     if not cfg["url"]: return {}
-    base, cj = qbit_session()
+    base, cj = qbit_session(cfg)
     out = {}; ts = http_json(base + "/torrents/info", cj=cj) or []
     for t in ts:
         for f in http_json(base + "/torrents/files?hash=" + t["hash"], cj=cj) or []:
@@ -145,6 +155,146 @@ def read_qbit():
                                                                              "seeding_days": float(t.get("seeding_time") or 0) / 86400, "label": t.get("category") or "", "finished": float(t.get("progress") or 0) >= 1, "id": t["hash"],
                                                                              "private": next((t[k] for k in ("private", "is_private", "isPrivate") if isinstance(t.get(k), bool)), None)}
     CLIENT_STATUS["qBittorrent"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
+
+def _basic(user, password): return {"Authorization": "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()} if user or password else {}
+def _num(x, d=0.0):
+    """A number from a client's answer, or d when it is missing, wounded or not finite."""
+    try: v = float(x)
+    except (TypeError, ValueError): return d
+    return v if v == v and abs(v) != float("inf") else d
+
+def xmlrpc_call(url, method, params, headers=None, timeout=None):
+    """One XML-RPC call (rTorrent). Read-only callers only: d.multicall2, f.multicall, system.*. Raises on a fault."""
+    import xmlrpc.client
+    body = xmlrpc.client.dumps(tuple(params), method).encode()
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "text/xml", **(headers or {})})
+    with urllib.request.urlopen(req, timeout=timeout or CLIENT_TIMEOUT) as r: raw = r.read(64 * 1024 * 1024)
+    return xmlrpc.client.loads(raw, use_builtin_types=True)[0][0]
+
+RT_FIELDS = ["d.hash=", "d.name=", "d.directory=", "d.custom1=", "d.complete=", "d.ratio=", "d.is_private=", "d.state=", "d.is_active=", "d.timestamp.finished=", "d.left_bytes="]
+def read_rtorrent(cfg=None, timeout=None):
+    """P2.3: rTorrent over XML-RPC (recorded from rTorrent 0.16 on 2026-11-18). Reads only: one d.multicall2 for the torrents, one system.multicall
+    for their files. Ratio comes in thousandths; rTorrent keeps no seeding time, so it is counted from the moment the torrent finished."""
+    cfg = cfg or CLIENTS["rTorrent"]
+    if not cfg["url"]: return {}
+    H = _basic(cfg.get("user"), cfg.get("password")); call = lambda m, p: xmlrpc_call(cfg["url"], m, p, H, timeout)
+    ts = [t for t in (call("d.multicall2", ["", "main", *RT_FIELDS]) or []) if isinstance(t, list) and len(t) >= len(RT_FIELDS) and isinstance(t[0], str) and t[0]]
+    files = []
+    for i in range(0, len(ts), 100):   # every torrent's files in one request per hundred torrents
+        res = call("system.multicall", [[{"methodName": "f.multicall", "params": [t[0], "", "f.path="]} for t in ts[i:i + 100]]])
+        files += res if isinstance(res, list) else []
+    out = {}; now = time.time()
+    for t, fr in zip(ts, files, strict=False):   # a short answer leaves the last torrents without files, never shifted
+        h, name, d_, label, complete, ratio, private, started, active, fin = t[:10]
+        if not isinstance(d_, str) or not d_.startswith("/"): continue
+        fl = fr[0] if isinstance(fr, list) and fr and isinstance(fr[0], list) else []
+        done = _num(complete) == 1; fin = _num(fin)
+        state = ("seeding" if _num(active) == 1 else "paused") if done and _num(started) == 1 else "stopped" if _num(started) != 1 else "downloading"
+        info = {"client": "rTorrent", "name": str(name), "state": state, "ratio": _num(ratio) / 1000, "seeding_days": max(0.0, now - fin) / 86400 if done and fin > 0 else 0.0,
+                "label": urllib.parse.unquote(label) if isinstance(label, str) else "", "finished": done, "id": h, "private": bool(private) if isinstance(private, (int, bool)) else None}
+        for f in fl:
+            if isinstance(f, list) and f and isinstance(f[0], str) and f[0]: out[map_client_path(os.path.join(d_, f[0]))] = info
+    CLIENT_STATUS["rTorrent"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
+
+TR_STATUS = {0: "stopped", 1: "queued to check", 2: "checking", 3: "queued", 4: "downloading", 5: "queued to seed", 6: "seeding"}
+def read_transmission(cfg=None, timeout=None):
+    """P2.3: Transmission's RPC (recorded from Transmission 4.1 on 2026-11-18): the session-id handshake, then one torrent-get with the files.
+    isFinished in Transmission means 'stopped at its seed limit', so a torrent counts as finished when nothing is left to download."""
+    cfg = cfg or CLIENTS["Transmission"]
+    if not cfg["url"]: return {}
+    u = cfg["url"] if cfg["url"].endswith("/rpc") else cfg["url"] + ("/rpc" if cfg["url"].endswith("/transmission") else "/transmission/rpc")
+    H = {"Content-Type": "application/json", **_basic(cfg.get("user"), cfg.get("password"))}; sid = ""
+    fields = ["hashString", "name", "downloadDir", "status", "percentDone", "leftUntilDone", "uploadRatio", "secondsSeeding", "isPrivate", "labels", "files"]
+    for _ in range(2):
+        req = urllib.request.Request(u, data=json.dumps({"method": "torrent-get", "arguments": {"fields": fields}}).encode(), headers={**H, "X-Transmission-Session-Id": sid})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or CLIENT_TIMEOUT) as r: j = json.loads(r.read().decode("utf-8", "replace") or "{}"); break
+        except urllib.error.HTTPError as e:
+            if e.code == 409 and e.headers.get("X-Transmission-Session-Id"): sid = e.headers["X-Transmission-Session-Id"]; continue
+            if e.code == 401: raise RuntimeError("the user or password was refused") from None
+            raise
+    else: raise RuntimeError("it kept asking for a new session")
+    if not isinstance(j, dict) or j.get("result") != "success": raise RuntimeError(f"it answered: {str(j.get('result') if isinstance(j, dict) else j)[:80]}")
+    ts = [t for t in ((j.get("arguments") or {}).get("torrents") or []) if isinstance(t, dict) and isinstance(t.get("hashString"), str)]
+    out = {}
+    for t in ts:
+        d_ = t.get("downloadDir")
+        if not isinstance(d_, str) or not d_.startswith("/"): continue
+        done = _num(t.get("percentDone")) >= 1 and _num(t.get("leftUntilDone")) == 0; labels = t.get("labels") if isinstance(t.get("labels"), list) else []
+        info = {"client": "Transmission", "name": str(t.get("name") or ""), "state": TR_STATUS.get(t.get("status"), "unknown") if isinstance(t.get("status"), int) else "unknown",
+                "ratio": max(0.0, _num(t.get("uploadRatio"))), "seeding_days": max(0.0, _num(t.get("secondsSeeding"))) / 86400, "label": str(labels[0]) if labels else "",
+                "finished": done, "id": t["hashString"], "private": t.get("isPrivate") if isinstance(t.get("isPrivate"), bool) else None}
+        for f in t.get("files") if isinstance(t.get("files"), list) else []:
+            if isinstance(f, dict) and isinstance(f.get("name"), str) and f["name"]: out[map_client_path(os.path.join(d_, f["name"]))] = info
+    CLIENT_STATUS["Transmission"] = {"ok": True, "n": len(ts), "note": f"{len(ts)} torrents"}; return out
+
+SAB_DONE = {"completed": "finished", "failed": "failed"}
+def read_sabnzbd(cfg=None, timeout=None):
+    """P2.3: SABnzbd's API (recorded from SABnzbd 5.1 on 2026-11-18): history (finished and failed jobs, where they were stored) and the queue.
+    A finished job's 'storage' is its folder, or the file itself when the job held one file; queue items have no folder yet unless the
+    incomplete folder is an absolute path."""
+    cfg = cfg or CLIENTS["SABnzbd"]
+    if not cfg["url"]: return {}
+    api = lambda mode, extra="": http_json(f"{cfg['url']}/api?mode={mode}&output=json&apikey={urllib.parse.quote(cfg.get('key') or '')}{extra}", timeout=timeout)
+    h = api("history", "&limit=5000")
+    if not isinstance(h, dict) or not isinstance(h.get("history"), dict): raise RuntimeError("the API key was refused" if isinstance(h, dict) and "error" in h else "not SABnzbd's history")
+    slots = [s for s in h["history"].get("slots") or [] if isinstance(s, dict)]; out = {}
+    for s in slots:
+        d_ = s.get("storage") or s.get("path")
+        if not isinstance(d_, str) or not d_.startswith("/"): continue
+        name = str(s.get("name") or ""); st = str(s.get("status") or "").lower()
+        if os.path.splitext(d_)[1].lower() in VIDEO_EXT and os.path.basename(os.path.dirname(d_)) == name: d_ = os.path.dirname(d_)   # one-file job: the job's folder
+        key = map_client_path(d_) if os.path.splitext(d_)[1].lower() in VIDEO_EXT else map_client_path(d_).rstrip("/") + "/"
+        out[key] = {"client": "SABnzbd", "usenet": True, "name": name, "state": SAB_DONE.get(st, st or "unknown"), "ratio": 0.0, "seeding_days": 0.0, "label": str(s.get("category") or ""), "finished": st in SAB_DONE, "id": s.get("nzo_id")}
+    q = api("queue"); qs = [s for s in ((q.get("queue") or {}).get("slots") or []) if isinstance(s, dict)] if isinstance(q, dict) else []
+    inc = ""
+    if qs:
+        try: inc = str((((api("get_config", "&section=misc") or {}).get("config") or {}).get("misc") or {}).get("download_dir") or "")
+        except Exception: inc = ""
+    for s in qs:
+        if inc.startswith("/") and s.get("filename"): out[map_client_path(os.path.join(inc, str(s["filename"]))).rstrip("/") + "/"] = {"client": "SABnzbd", "usenet": True, "name": str(s["filename"]), "state": "downloading", "ratio": 0.0, "seeding_days": 0.0, "label": str(s.get("cat") or ""), "finished": False, "id": s.get("nzo_id")}
+    CLIENT_STATUS["SABnzbd"] = {"ok": True, "n": len(slots), "note": f"{len(slots)} in history, {len(qs)} downloading"}; return out
+
+ARR_KINDS = {"deluge": "Deluge", "nzbget": "NZBGet", "qbittorrent": "qBittorrent", "rtorrent": "rTorrent", "transmission": "Transmission", "sabnzbd": "SABnzbd"}
+def read_arr_clients():
+    """P2.0: each arr's Download Clients page (/api/v3/downloadclient): the kind, its address, whether it is switched on there. The arrs never hand out
+    passwords or API keys (they answer '********'), so a client that needs one still needs it set here. -> [{app, kind, known, enabled, url, user, name, priority}]"""
+    out = []
+    for app, cfg in ARRS.items():
+        if not cfg["url"] or not cfg["key"]: continue
+        try: lst = http_json(f"{cfg['url']}/api/{api_v(app)}/downloadclient", headers={"X-Api-Key": cfg["key"]})
+        except Exception as e: note_error(f"{app} download clients: {e}"); continue
+        for dc in lst if isinstance(lst, list) else []:
+            if not isinstance(dc, dict): continue
+            impl = str(dc.get("implementation") or ""); kind = ARR_KINDS.get(impl.lower())
+            f = {x.get("name"): x.get("value") for x in (dc.get("fields") if isinstance(dc.get("fields"), list) else []) if isinstance(x, dict)}
+            host = str(f.get("host") or "").strip(); port = f.get("port"); base = str(f.get("urlBase") or "").strip()
+            url = ""
+            if host and re.fullmatch(r"[A-Za-z0-9._:\[\]-]+", host) and isinstance(port, int) and 0 < port < 65536:
+                url = f"http{'s' if f.get('useSsl') is True else ''}://{host}:{port}" + (("/" + base.strip("/")) if base.strip("/") else "")
+                if kind == "rTorrent" and not base.strip("/"): url += "/RPC2"
+                if kind == "Transmission": url = url.rstrip("/") + ("/rpc" if url.rstrip("/").endswith("/transmission") else "")
+            out.append({"app": app, "kind": kind or (str(dc.get("implementationName") or impl) or "unknown"), "known": bool(kind), "enabled": dc.get("enable") is True, "url": url,
+                        "user": str(f.get("username") or "") if isinstance(f.get("username"), str) else "", "name": str(dc.get("name") or "")[:80], "priority": dc.get("priority") if isinstance(dc.get("priority"), int) else 99})
+    return out
+
+def plan_clients(found, configured):
+    """Which clients a scan asks, from the addresses set here and what the arrs list. -> (read, soft, notes)
+    read: {kind: (cfg, source)} asked and reported when they fail. soft: {kind: (cfg, source)} only listed switched-off in the arrs: asked once,
+    briefly; used when they answer, never reported as broken when they do not (a switched-off client is usually not running).
+    An address set here always wins; one address per kind (the first switched-on one, by the arr's priority)."""
+    read, soft = {}, {}
+    for kind, cfg in configured.items():
+        if cfg.get("url"): read[kind] = (cfg, CLIENT_SOURCE.get(kind, "container"))
+    for f in sorted(found, key=lambda f: (not f["enabled"], f["priority"])):
+        k = f["kind"]
+        if not f["known"] or not f["url"] or k in read or (k in soft and not f["enabled"]): continue
+        cfg = dict(configured.get(k) or {}, url=f["url"])
+        if f["user"] and not cfg.get("user"): cfg["user"] = f["user"]
+        (read if f["enabled"] else soft)[k] = (cfg, f["app"])
+        if f["enabled"]: soft.pop(k, None)
+    notes = [f"{f['app'].capitalize()} also uses {f['kind']}, which Dedupearr cannot read yet." for f in found if not f["known"]]   # a switched-off one gets its note after it was asked
+    return read, soft, list(dict.fromkeys(notes))
 
 def api_v(app): return "v1" if app == "lidarr" else "v3"
 
@@ -279,17 +429,39 @@ def auditarr_status():
 
 def gather_context():
     """Ask every configured client and arr once per scan. A client that fails is reported on About and simply leaves its files unexplained."""
-    clients = {}
-    for name, fn in (("Deluge", read_deluge), ("NZBGet", read_nzbget), ("qBittorrent", read_qbit)):
-        if not CLIENTS[name]["url"]: CLIENT_STATUS.pop(name, None); continue
-        try: clients.update(fn())
-        except Exception as e: CLIENT_STATUS[name] = {"ok": False, "n": 0, "note": str(e)[:160]}; note_error(f"{name}: {e}")
+    clients = {}; found = read_arr_clients(); read, soft, notes = plan_clients(found, CLIENTS)
+    DISCOVERED.clear(); DISCOVERED.extend(found); ACTIVE.clear()
+    for name, fn in READERS.items():
+        if name not in read and name not in soft: CLIENT_STATUS.pop(name, None); continue
+        cfg, src = read.get(name) or soft[name]; ACTIVE[name] = cfg
+        try: clients.update(fn(cfg, None if name in read else min(CLIENT_TIMEOUT, 10)))
+        except Exception as e:
+            if name in soft:   # switched off in the arr and not answering: that is what switched off usually means, not a fault
+                CLIENT_STATUS.pop(name, None); ACTIVE.pop(name, None); notes.append(f"{name} is switched off in {src.capitalize()} and did not answer at its address, so it is not read."); continue
+            hint = f" (its address came from {src.capitalize()}'s settings, which never share passwords or API keys: set them here)" if src in ARRS and name in NEEDS_SECRET else ""
+            CLIENT_STATUS[name] = {"ok": False, "n": 0, "note": (str(e)[:160] + hint)[:300]}; note_error(f"{name}: {e}")
+            continue
+        CLIENT_STATUS[name]["source"] = src
+        if name in soft: CLIENT_STATUS[name]["note"] += f"; switched off in {src.capitalize()}, but still running, so its files are explained"
+    DISCOVERY_NOTES[:] = notes
     ctx = {"clients": clients, "imports": read_arr_imports(), "queue": read_arr_queue(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS), "auditarr": read_auditarr()}
     try:   # remembered across restarts, so the page and About stay consistent until the next scan asks again
-        c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); kv_set(c, "auditarr_status", json.dumps(AUDITARR_STATUS)); c.close()
+        c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); kv_set(c, "auditarr_status", json.dumps(AUDITARR_STATUS))
+        kv_set(c, "discovery", json.dumps({"notes": notes, "found": [{k: v for k, v in f.items() if k != "user"} for f in found]})); c.close()
     except Exception as e: log(f"could not remember the client status: {e}")
     return ctx
 
+READERS = {"Deluge": read_deluge, "NZBGet": read_nzbget, "qBittorrent": read_qbit, "rTorrent": read_rtorrent, "Transmission": read_transmission, "SABnzbd": read_sabnzbd}
+NEEDS_SECRET = {"Deluge", "NZBGet", "qBittorrent", "SABnzbd"}   # these never answer without the password or key the arrs keep to themselves
+DISCOVERY_NOTES = []   # plain sentences about clients the arrs list that are not read (switched off, or a kind Dedupearr cannot read)
+
+def discovery():
+    """What the arrs list and the notes about it, from this run or remembered from the last scan. -> {"notes": [...], "found": [...]}"""
+    if DISCOVERED or DISCOVERY_NOTES: return {"notes": list(DISCOVERY_NOTES), "found": [{k: v for k, v in f.items() if k != "user"} for f in DISCOVERED]}
+    try:
+        c = db(); saved = kv_get(c, "discovery"); c.close(); j = json.loads(saved) if saved else {}
+        return {"notes": [str(n) for n in j.get("notes") or []], "found": [f for f in j.get("found") or [] if isinstance(f, dict)]}
+    except Exception: return {"notes": [], "found": []}
 def client_status():
     if CLIENT_STATUS: return CLIENT_STATUS
     try:
@@ -310,7 +482,7 @@ def seeding_done(ci):
     """Nothing holds the file (no client knows it), or the client finished it and your seeding rule is met."""
     if ci is None: return True
     if not ci.get("finished"): return False
-    if ci.get("client") == "NZBGet": return True
+    if is_usenet(ci): return True
     r_ok, d_ok = ci.get("ratio", 0) >= SEED_MIN_RATIO, ci.get("seeding_days", 0) >= SEED_MIN_DAYS
     return (r_ok or d_ok) if rule_for(ci) == "either" else (r_ok and d_ok)
 
@@ -322,7 +494,7 @@ def rule_for(ci):
 
 def seed_wait(ci):
     """Short words for the row while a torrent still seeds: when it can go. '' when it can go now or nothing seeds it."""
-    if not ci or ci.get("client") == "NZBGet" or seeding_done(ci): return ""
+    if not ci or is_usenet(ci) or seeding_done(ci): return ""
     if not ci.get("finished"): return "Still downloading"
     days_left = max(0.0, SEED_MIN_DAYS - (ci.get("seeding_days") or 0)); ratio_left = (ci.get("ratio") or 0) < SEED_MIN_RATIO
     d_txt = "tomorrow" if days_left <= 1 else f"in about {round(days_left)} days"
@@ -332,7 +504,7 @@ def seed_wait(ci):
 
 def client_text(ci):
     if ci is None: return "not in any download client"
-    if ci["client"] == "NZBGet": return f"NZBGet: {ci['state']}" + (f" ({ci['label']})" if ci.get("label") else "")
+    if is_usenet(ci): return f"{ci['client']}: {ci['state']}" + (f" ({ci['label']})" if ci.get("label") else "")
     return f"{ci['client']}: {ci['state']}, ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days" + (f", label {ci['label']}" if ci.get("label") else "")
 
 FIX_MODE = (_env("FIX_MODE", "dryrun") or "dryrun").lower()   # off | dryrun | on. Phase 3: every fix shows its steps first; "on" arrives step by step and stays off until you turn it on
@@ -581,7 +753,7 @@ def judge(c, now, ctx=None):
             elif ci and not ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"):   # #20: still coming in; neither seeding nor waste yet
                 code, twin = "DOWNLOADING", None; ev += "; still downloading"
             elif clients_ok and ci is None and any(a["url"] for a in ARRS.values()): code = "ORPHAN"; ev += "; no download client knows this file and no arr imported it"
-            elif ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()):   # a finished (or failed) usenet job nobody imported holds space for nothing: to decide, never "seeding only"
+            elif is_usenet(ci) and ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()):   # a finished (or failed) usenet job nobody imported holds space for nothing: to decide, never "seeding only"
                 if code == "LOOKALIKE": code, twin, ev = "DOWNLOAD_UNMATCHED", None, f"inode {r['ino']}, link count {r['nlink']}, same size as a library file but different content"
                 ev += "; no arr ever imported it, and usenet does not seed"
             elif ci and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE") and any(a["url"] for a in ARRS.values()): code = "SEEDING_ONLY"; ev += "; no arr ever imported it"
@@ -619,7 +791,7 @@ LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": 
 NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"}
 def seed_sentence(ci):
     if ci is None: return "Nothing holds it, so it can go now."
-    if ci.get("client") == "NZBGet": return "It came from usenet, so there is no seeding to wait for; it can go now."
+    if is_usenet(ci): return "It came from usenet, so there is no seeding to wait for; it can go now."
     if seeding_done(ci): return f"{ci['client']} has seeded it to ratio {ci['ratio']:.1f} over {ci['seeding_days']:.0f} days, past your rule, so it can go now."
     kind = "" if SEED_RULE in ("both", "either") else (" (a private torrent)" if ci.get("private") else " (a public torrent)" if ci.get("private") is False else " (the client does not say whether it is private, so the safe rule)")
     return f"{ci['client']} is still seeding it (ratio {ci['ratio']:.2f}, {ci['seeding_days']:.0f} days); your rule{kind} keeps it until ratio {SEED_MIN_RATIO:g} {'or' if rule_for(ci) == 'either' else 'and'} {SEED_MIN_DAYS:g} days."
@@ -647,9 +819,9 @@ def sentence(v):
     if code == "DUPLICATE_COPY": return f"Stored twice: the library file {t} and this download are two separate files with identical content. Making them one file again would free {size}.{tail}"
     if code == "DUPLICATE_HEADER": return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. {size} to get back.{tail}"
     if code == "LOOKALIKE": return f"Same size as {t} but different content, so not a duplicate. Worth a look if you expected one copy."
-    if code == "DOWNLOAD_UNMATCHED" and ci and ci.get("client") == "NZBGet" and ci.get("finished"):
+    if code == "DOWNLOAD_UNMATCHED" and is_usenet(ci) and ci.get("finished"):
         how = "marked it failed" if ci.get("state") == "failed" else "finished it" if ci.get("state") == "finished" else "lists it as " + str(ci.get("state") or "done").replace("/", ", ")
-        return f"A usenet download nothing in the library matches and no arr imported: NZBGet {how}. Usenet does not seed, so nothing holds it; import it if you want it, otherwise it can go. {size} to decide on."
+        return f"A usenet download nothing in the library matches and no arr imported: {ci['client']} {how}. Usenet does not seed, so nothing holds it; import it if you want it, otherwise it can go. {size} to decide on."
     if code == "DOWNLOAD_UNMATCHED": return f"Nothing in the library matches this download. It may be a leftover from an upgrade, an orphan, or something still seeding; the download-client check (phase 2) will tell. {size} to decide on."
     if code == "DOWNLOAD_OTHER_RELEASE": return f"Nothing identical in the library, but it holds a different release of the same title: {t}. If that one is the keeper, this download is a leftover from an upgrade and can go once seeding is done. {size} to get back.{tail}"
     if code == "BIN_OLD": return f"In a recycle bin longer than your {RECYCLE_DAYS}-day rule. Emptying it would free {size}."
@@ -658,6 +830,11 @@ def sentence(v):
 
 # -------------------------------------------------------------------------------------------------------------- fixes (phase 3)
 FIXABLE = {"DUPLICATE_COPY": "relink", "DUPLICATE_HEADER": "remove", "DOWNLOAD_OTHER_RELEASE": "remove", "LEFTOVER": "remove", "ORPHAN": "bin", "BIN_OLD": "empty"}
+def no_remove_call(ci):
+    """A torrent in a client Dedupearr can read but cannot tell to forget a torrent (rTorrent, Transmission): moving its file would break the torrent."""
+    return bool(ci) and not is_usenet(ci) and ci.get("client") not in REMOVE_READERS
+def no_remove_sentence(ci):
+    return f"Dedupearr can read {ci['client']} but cannot remove torrents from it yet, so this file stays where {ci['client']} expects it. Remove the torrent in {ci['client']} (keep its files) and the next scan offers the move."
 def plan_fix(v):
     """The exact steps a fix would take for this file, in plain words, before anything is touched. Returns (kind, steps, frees) or (None, [reason], 0)."""
     code = v["code"]; ci = v.get("client") if isinstance(v.get("client"), dict) else (json.loads(v["client"]) if v.get("client") else None)
@@ -665,10 +842,11 @@ def plan_fix(v):
     if not kind: return None, ["Nothing to fix here: this file is fine or needs no change."], 0
     if kind == "relink" and ci and not ci.get("finished"): return None, ["The client is still downloading this file, so it is left alone."], 0   # a relink keeps the client seeding, so it does not wait for the seeding rule
     if not v.get("removable", True) and kind == "remove": return None, [seed_sentence(ci)], 0
+    if kind == "remove" and no_remove_call(ci): return None, [no_remove_sentence(ci)], 0   # P2.3: a torrent this app cannot remove keeps its file where the client expects it
     hold = f"{HOLDING_DIR}/{os.path.basename(v['path'])}"
     if kind == "relink": steps = ["Compare both files byte for byte right before the change (a big file takes a few minutes).", f"Move this copy into the holding bin at {hold} (nothing is deleted).", f"Create a hardlink from the library file {friendly_title(v['twin'] or '')} at this download's name, so the client keeps seeding the same bytes.",
                                  "Confirm both names are now one file; if anything fails, put the copy back.", f"Keep the moved copy for {HOLD_DAYS} days, then delete it, unless you press Undo."]
-    elif kind == "remove": steps = ([f"Ask {ci['client']} once more whether the torrent '{ci['name']}' is still past your seeding rule, then remove it there without deleting its files." if ci and ci.get("client") != "NZBGet" else ("It came from usenet and nothing seeds it; NZBGet's history is left as it is." if ci else "No client holds this file, so there is nothing to tell a client.")]
+    elif kind == "remove": steps = ([f"Ask {ci['client']} once more whether the torrent '{ci['name']}' is still past your seeding rule, then remove it there without deleting its files." if ci and not is_usenet(ci) else (f"It came from usenet and nothing seeds it; {ci['client']}'s history is left as it is." if ci else "No client holds this file, so there is nothing to tell a client.")]
                                     + [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."])
     elif kind == "bin": steps = [f"Move the file into the holding bin at {hold} (nothing is deleted).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."]
     else: steps = [f"The file has sat in its recycle bin longer than your {RECYCLE_DAYS}-day rule.", f"Move it into the holding bin at {hold} (nothing is deleted yet).", f"Keep it for {HOLD_DAYS} days, then delete it, unless you press Undo."]   # P3.4: no fix deletes directly, not even from a recycle bin
@@ -872,6 +1050,7 @@ def remove_fix(c, v, steps, now=None):
     torrent (never its files); if the client refuses, the file goes straight back. Returns (code, obj)."""
     path = v["path"]; ci = json.loads(v["client"]) if isinstance(v.get("client"), str) and v["client"] else (v.get("client") or None)
     why = f"{v['code']}: " + " | ".join(steps); torrent = None
+    if no_remove_call(ci): return 409, {"error": no_remove_sentence(ci)}
     if ci and ci.get("client") in REMOVE_READERS:
         try: fresh = REMOVE_READERS[ci["client"]]()
         except Exception as e: return 502, {"error": f"{ci['client']} did not answer just now ({e}), so nothing was changed; try again in a minute"}
@@ -953,7 +1132,7 @@ def _relink_fix(c, v, steps, now=None, tick=None):
     if not one: return undo("After linking, the two names were not one file.")
     c.execute("UPDATE held SET link_ino=?, note=? WHERE id=?", (b.st_ino, "its old name now points at the library file; Put back swaps this copy back in", obj["held_id"])); c.commit()
     record_action(c, "on", "relink", path, f"linked to the library file {twin}", "done; both names are one file, the old copy waits in the holding bin")
-    obj["note"] = "Done: the download's name now points at the library file, so both are one file" + (f" and {ci['client']} keeps seeding it" if ci and ci.get("client") != "NZBGet" else "") + f". The old copy waits in the holding bin; {obj['frees_h']} comes back after {HOLD_DAYS} days, and Put back (Actions tab) undoes it until then."
+    obj["note"] = "Done: the download's name now points at the library file, so both are one file" + (f" and {ci['client']} keeps seeding it" if ci and not is_usenet(ci) else "") + f". The old copy waits in the holding bin; {obj['frees_h']} comes back after {HOLD_DAYS} days, and Put back (Actions tab) undoes it until then."
     return 200, obj
 def relink_job(v, steps):
     """The relink runs beside the page (comparing two big files takes minutes); FIXING carries its progress and, at the end, its result."""
@@ -1067,6 +1246,7 @@ def state(c):
         v["fix_kind"] = FIXABLE.get(v["code"]) if v["fixable"] else ""
         v["bulk"] = bool(v["fixable"] and in_bulk(v["fix_kind"], ci))   # may go with 'Move all shown'
         v["wait"] = seed_wait(v.get("client") if isinstance(v.get("client"), dict) else None) if v["needs_you"] and not v["fixable"] and v["code"] in FIXABLE else ""   # why there is no button yet
+        if v["fix_kind"] == "remove" and no_remove_call(ci): v["fixable"] = False; v["fix_kind"] = ""; v["bulk"] = False; v["wait"] = f"Remove it in {ci['client']} first (keep its files)"
         items.append(v)
     packs = {}
     for v in items:
@@ -1127,7 +1307,8 @@ def about(c):
     for name, st_ in sorted(client_status().items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
     au = auditarr_status()
     if au: health.append({"level": "ok", "text": f"Auditarr: {au['note']}; its trash is left alone."} if au["ok"] else {"level": "warn", "text": f"Auditarr could not be read: {au['note']}. Files it changed are explained less precisely until it answers."})
-    if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Set DELUGE_URL / NZBGET_URL / QBIT_URL and SONARR_URL / RADARR_URL (see the README)."})
+    for n in discovery()["notes"]: health.append({"level": "ok", "text": n})
+    if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Connect Sonarr or Radarr (SONARR_URL / RADARR_URL) and Dedupearr finds their download clients itself; see the README."})
     elif not client_status() and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
     health.append({"level": "ok", "text": {"off": "Fixes are switched off.", "dryrun": "Fixes run as a dry run: every 'Preview fix' shows the exact steps and nothing is moved, linked or deleted.", "on": "Fixes are on: files move to the holding bin first and can be undone for %d days." % HOLD_DAYS}.get(FIX_MODE, FIX_MODE)})
     if NTFY_URL and DIGEST == "on" and not SANDBOX: health.append({"level": "ok", "text": "A morning message goes to your phone after each nightly scan."})

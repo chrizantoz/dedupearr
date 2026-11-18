@@ -1,7 +1,10 @@
-"""A fake Deluge, NZBGet, qBittorrent, Sonarr and Radarr in one small HTTP server, answering in the shapes the real ones use
-(recorded from a real server on 2026-11-12). start(world, port) -> server; world = {"deluge": [torrents], "nzbget": [history], "qbit": [torrents], "arr": {app: [history records]}}.
+"""A fake Deluge, NZBGet, qBittorrent, rTorrent, Transmission, SABnzbd, Sonarr and Radarr in one small HTTP server, answering in the shapes the real
+ones use (Deluge/NZBGet/qBittorrent/arrs recorded from a real server on 2026-11-12; rTorrent 0.16 XML-RPC, Transmission 4.1 RPC, SABnzbd 5.1 API and
+the arrs' Download Clients list recorded 2026-11-18). start(world, port) -> server; world = {"deluge": [torrents], "nzbget": [history], "qbit": [torrents],
+"rtorrent": [...], "transmission": [...], "sab": [history], "arr": {app: [history records]}, "downloadclients": {app: [entries]}}.
+A download-client entry whose host is "@mock" points at this server, so discovery from the arrs finds the fake clients.
 Each torrent: {"id", "name", "save_path", "files": [relative paths], "state", "ratio", "seeding_time", "label", "finished"}."""
-import json, threading, urllib.parse
+import json, threading, urllib.parse, xmlrpc.client
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 import os, random
@@ -14,7 +17,15 @@ def extra_files(DATA, blob):
             "usenet_failed": blob(f"{DATA}/incomplete/Big.Pack.2160p.#54/Big.Pack.Scene.03.2160p.mp4", 2, "usenet-failed"),   # same size as library files: the lookalike path
             "usenet_failed2": blob(f"{DATA}/incomplete/Big.Pack.2160p.#54/Big.Pack.Scene.04.2160p.mp4", 3, "usenet-failed-2"),
             "await_imp": blob(f"{DATA}/completed/tv/Later.Show.S02E01.1080p.WEB/Later.Show.S02E01.1080p.WEB.mkv", 4, "await-import"),   # #20: finished, Sonarr is about to import it
-            "blocked_imp": blob(f"{DATA}/completed/movies/Odd.Film.2025.1080p.WEB/Odd.Film.2025.1080p.WEB.mkv", 5, "blocked-import")}   # #20: finished, Radarr cannot import it on its own   # a size nothing shares: the unmatched path
+            "blocked_imp": blob(f"{DATA}/completed/movies/Odd.Film.2025.1080p.WEB/Odd.Film.2025.1080p.WEB.mkv", 5, "blocked-import"),   # #20: finished, Radarr cannot import it on its own   # a size nothing shares: the unmatched path
+            # P2.3 (2026-11-18): rTorrent, Transmission and SABnzbd, found through Sonarr's Download Clients page
+            "rt_seed": blob(f"{DATA}/torrents/movies/Old.Film.1999.1080p.BluRay/Old.Film.1999.1080p.BluRay.mkv", 7, "rt-seed"),   # rTorrent seeds it, no arr imported it
+            "rt_left": blob(f"{DATA}/torrents/tv/Gone.Show.S02E03.1080p.WEB.mkv", 8, "rt-left"),   # rTorrent, past the rule, Sonarr's import replaced since: a leftover rTorrent must remove itself
+            "tr_dl": blob(f"{DATA}/torrents/tv/Coming.Soon.S01E01.1080p.WEB.mkv", 9, "tr-dl"),   # Transmission is still downloading it
+            "tr_pack1": blob(f"{DATA}/torrents/anime/Pack.Anime.S01/Pack.Anime.S01E01.1080p.mkv", 10, "tr-pack-1"),   # a private two-file torrent seeding in Transmission
+            "tr_pack2": blob(f"{DATA}/torrents/anime/Pack.Anime.S01/Pack.Anime.S01E02.1080p.mkv", 11, "tr-pack-2"),
+            "sab_done": blob(f"{DATA}/usenet/complete/Sab.Film.2024.1080p.WEB/Sab.Film.2024.1080p.WEB.mkv", 12, "sab-done"),   # SABnzbd finished it, Radarr imported it, the library moved on
+            "sab_failed": blob(f"{DATA}/usenet/incomplete/Sab.Broken.2023.2160p/Sab.Broken.2023.2160p.mkv", 13, "sab-failed")}   # a failed SABnzbd job nobody imported
 
 def world_for(P, DATA):
     """What the fake clients and arrs know about the fake disk (P = paths from fake_disk.build + extra_files)."""
@@ -34,19 +45,38 @@ def world_for(P, DATA):
                               "statusMessages": [{"title": "Odd.Film.2025.1080p.WEB", "messages": ["Found matching movie via grab history, but release was matched to movie by ID. Manual Import required."]}]}]},   # a failed job whose partial files stayed in incomplete/ (seen on a real server 2026-11-12: 243 GB)
         "nzbget_queue": [{"id": 8, "name": "Fresh.S01E02.1080p.WEB", "dir": os.path.dirname(P["usenet_new"]), "label": "tv"}],
         "qbit": [],
+        "rtorrent": [{"id": "A1B2C3D4E5F60718293A4B5C6D7E8F9012345678", "name": "Old.Film.1999.1080p.BluRay", "dir": os.path.dirname(P["rt_seed"]), "files": [os.path.basename(P["rt_seed"])], "label": "Software", "complete": 1, "ratio": 2500, "private": 0, "finished_ago": 40 * 86400},
+                     {"id": "B1B2C3D4E5F60718293A4B5C6D7E8F9012345678", "name": "Gone.Show.S02E03.1080p.WEB.mkv", "dir": os.path.dirname(P["rt_left"]), "files": [os.path.basename(P["rt_left"])], "label": "tv-sonarr", "complete": 1, "ratio": 2000, "private": 1, "finished_ago": 30 * 86400}],
+        "transmission": [{"id": 1, "hash": "272ec1f973608801bc707c4aa4f3e168c5b6bf79", "name": "Coming.Soon.S01E01.1080p.WEB.mkv", "dir": os.path.dirname(P["tr_dl"]), "files": [os.path.basename(P["tr_dl"])], "status": 4, "done": 0.4, "ratio": 0.0, "seeding": 0, "private": False, "labels": ["tv-sonarr"]},
+                         {"id": 2, "hash": "33f13a0fe531738ef0c2316c4bfaf7fa7c3b4b98", "name": "Pack.Anime.S01", "dir": os.path.dirname(os.path.dirname(P["tr_pack1"])), "files": ["Pack.Anime.S01/" + os.path.basename(P["tr_pack1"]), "Pack.Anime.S01/" + os.path.basename(P["tr_pack2"])], "status": 6, "done": 1.0, "ratio": 0.3, "seeding": 3 * 86400, "private": True, "labels": []}],
+        "sab": [{"nzo_id": "SABnzbd_nzo_done", "name": "Sab.Film.2024.1080p.WEB", "status": "Completed", "category": "movies", "storage": P["sab_done"], "path": os.path.dirname(P["sab_done"]).replace("/complete/", "/incomplete/")},
+                {"nzo_id": "SABnzbd_nzo_fail", "name": "Sab.Broken.2023.2160p", "status": "Failed", "category": "movies", "storage": os.path.dirname(P["sab_failed"]), "path": os.path.dirname(P["sab_failed"]), "fail_message": "Download failed - Not on your server(s)"}],
+        # each arr's Download Clients page (/api/v3/downloadclient, recorded shape: implementation, enable, priority, fields[{name, value}]; passwords come back as ********)
+        "downloadclients": {"sonarr": [_dc("Deluge", True, 1, "/deluge"), _dc("Nzbget", True, 1, "/nzbget"), _dc("RTorrent", True, 2, "rtorrent/RPC2"), _dc("Transmission", True, 2, "/transmission/transmission/"), _dc("Sabnzbd", True, 1, "/sabnzbd")],
+                            "radarr": [_dc("QBittorrent", False, 3, "/qbit"), _dc("RTorrent", False, 2, "RPC2", port=9), _dc("Flood", True, 1, "")]},
         "arr": {"sonarr": [{"eventType": "downloadFolderImported", "date": "2026-10-14T03:00:00Z", "sourceTitle": "Shogun.S01E05.1080p.WEB.h264-GRP", "data": {"droppedPath": P["unmatched"], "importedPath": f"{DATA}/media/tv/Shogun/Season 01/Shogun - S01E05 - Broken to the Fist WEBDL-1080p.mkv"}},
-                           {"eventType": "downloadFolderImported", "date": "2026-11-01T03:00:00Z", "sourceTitle": "Show.S01E01.1080p.WEB", "data": {"droppedPath": P["usenet"], "importedPath": f"{DATA}/media/tv/Show/Season 01/Show - S01E01.mkv"}}],
-                "radarr": []},
+                           {"eventType": "downloadFolderImported", "date": "2026-11-01T03:00:00Z", "sourceTitle": "Show.S01E01.1080p.WEB", "data": {"droppedPath": P["usenet"], "importedPath": f"{DATA}/media/tv/Show/Season 01/Show - S01E01.mkv"}},
+                           {"eventType": "downloadFolderImported", "date": "2026-10-20T03:00:00Z", "sourceTitle": "Gone.Show.S02E03.1080p.WEB", "data": {"droppedPath": P["rt_left"], "importedPath": f"{DATA}/media/tv/Gone Show/Season 02/Gone Show - S02E03.mkv"}}],
+                "radarr": [{"eventType": "downloadFolderImported", "date": "2026-10-25T03:00:00Z", "sourceTitle": "Sab.Film.2024.1080p.WEB", "data": {"droppedPath": P["sab_done"], "importedPath": f"{DATA}/media/movies/Sab Film (2024)/Sab Film (2024).mkv"}}]},
         # each arr's library folders, and Sonarr's anime flag per series (what a real Sonarr returns, trimmed to the fields used)
         "roots": {"sonarr": [f"{DATA}/media/tv", f"{DATA}/media/anime"], "radarr": [f"{DATA}/media/movies"]},
         "series": [{"id": 1, "title": "Frieren", "seriesType": "anime", "path": f"{DATA}/media/anime/Frieren"},
                    {"id": 2, "title": "Frieren", "seriesType": "standard", "path": f"{DATA}/media/tv/Frieren"},
                    {"id": 3, "title": "The Bear", "seriesType": "standard", "path": f"{DATA}/media/tv/The Bear"}]}
 
+def _dc(impl, enable, priority, base, port=None, host="@mock"):
+    """One entry of an arr's Download Clients list, in the recorded shape."""
+    fields = [{"name": "host", "value": host}, {"name": "port", "value": port or "@port"}, {"name": "useSsl", "value": False}, {"name": "urlBase", "value": base or None},
+              {"name": "username", "value": "test" if impl not in ("Deluge", "Sabnzbd") else None}, {"name": "password", "value": "********"}, {"name": "tvCategory", "value": "tv"}]
+    if impl == "Sabnzbd": fields.append({"name": "apiKey", "value": "********"})
+    return {"enable": enable, "protocol": "usenet" if impl in ("Nzbget", "Sabnzbd") else "torrent", "priority": priority, "removeCompletedDownloads": True, "removeFailedDownloads": True,
+            "name": impl, "fields": fields, "implementationName": impl, "implementation": impl, "configContract": f"{impl}Settings", "infoLink": "", "tags": [], "id": priority}
+
 def env_for(M):
-    """The environment that points Dedupearr at a mock listening at M."""
+    """The environment that points Dedupearr at a mock listening at M. rTorrent, Transmission and SABnzbd have no address here on purpose:
+    Dedupearr finds them on Sonarr's Download Clients page (P2.0). Only SABnzbd's API key is set, because the arrs never share it."""
     return dict(DELUGE_URL=f"{M}/deluge", DELUGE_PASSWORD="test", NZBGET_URL=f"{M}/nzbget", NZBGET_USER="test", NZBGET_PASSWORD="test", QBIT_URL=f"{M}/qbit", QBIT_USER="test", QBIT_PASSWORD="test",
-                SONARR_URL=f"{M}/sonarr", SONARR_APIKEY="test", RADARR_URL=f"{M}/radarr", RADARR_APIKEY="test")
+                SABNZBD_APIKEY="test", SONARR_URL=f"{M}/sonarr", SONARR_APIKEY="test", RADARR_URL=f"{M}/radarr", RADARR_APIKEY="test")
 
 def _mangle(obj, rnd, depth=0):
     """One random wound somewhere in a reply: a key gone, a null, a wrong type, a huge string, odd unicode."""
@@ -84,6 +114,15 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                 t = next((t for t in world.get("qbit", []) if t["id"] == q.get("hash", [""])[0]), None); return self._send([{"name": f, "size": 1, "progress": 1} for f in (t["files"] if t else [])])
             for app in ("sonarr", "radarr", "whisparr", "sportarr", "lidarr"):
                 v = "v1" if app == "lidarr" else "v3"
+                if u.path == f"/{app}/api/{v}/downloadclient":
+                    if self.headers.get("X-Api-Key") != "test": return self._send({"error": "Unauthorized"}, 401)
+                    host, port = self.server.server_address[:2]
+                    lst = json.loads(json.dumps(world.get("downloadclients", {}).get(app, [])))
+                    for e in lst:
+                        for f in e["fields"]:
+                            if f["value"] == "@mock": f["value"] = host
+                            if f["value"] == "@port": f["value"] = port
+                    return self._send(lst)
                 if u.path == f"/{app}/api/{v}/rootfolder": return self._send([{"id": n + 1, "path": r} for n, r in enumerate(world.get("roots", {}).get(app, []))])
                 if app == "sonarr" and u.path == "/sonarr/api/v3/series": return self._send(world.get("series", []))
                 if u.path == f"/{app}/api/{v}/history":
@@ -94,7 +133,21 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                     if self.headers.get("X-Api-Key") != "test": return self._send({"error": "Unauthorized"}, 401)
                     recs = world.get("queue", {}).get(app, []); return self._send({"page": 1, "pageSize": 500, "totalRecords": len(recs), "records": recs})
                 if u.path == f"/{app}/api/v3/system/status": return self._send({"appName": app, "version": "4.0.0"})
+            if u.path == "/sabnzbd/api":   # SABnzbd 5.1, recorded 2026-11-18
+                if q.get("apikey", [""])[0] != "test": return self._send({"status": False, "error": "API Key Incorrect"})
+                mode = q.get("mode", [""])[0]
+                if mode == "history": return self._send({"history": {"noofslots": len(world.get("sab", [])), "ppslots": 0, "day_size": "0 B", "week_size": "0 B", "month_size": "0 B", "total_size": "0 B", "last_history_update": 1, "version": "5.1.3",
+                                                                     "slots": [{"completed": 1794992385, "name": h["name"], "nzb_name": h["name"] + ".nzb", "category": h["category"], "pp": "D", "script": "None", "report": "", "url": None, "status": h["status"], "nzo_id": h["nzo_id"],
+                                                                                "storage": h["storage"], "path": h["path"], "script_line": "", "download_time": 0, "postproc_time": 0, "downloaded": 1, "completeness": None, "fail_message": h.get("fail_message", ""), "url_info": "",
+                                                                                "bytes": 1, "meta": None, "series": None, "md5sum": "", "password": None, "duplicate_key": h["name"].lower(), "archive": False, "time_added": 1794992212, "size": "1 B", "action_line": "", "loaded": False, "retry": h["status"] == "Failed"} for h in world.get("sab", [])]}})
+                if mode == "queue": return self._send({"queue": {"version": "5.1.3", "paused": False, "noofslots": len(world.get("sab_queue", [])), "status": "Downloading", "slots": [{"nzo_id": g["nzo_id"], "filename": g["name"], "labels": [], "cat": g.get("category", ""), "mbleft": "1", "mb": "2", "percentage": "50", "status": "Downloading"} for g in world.get("sab_queue", [])]}})
+                if mode == "get_config": return self._send({"config": {"misc": {"download_dir": world.get("sab_incomplete", "Downloads/incomplete"), "complete_dir": "Downloads/complete"}}})
+                world.setdefault("_writes", []).append(("SABnzbd", mode)); return self._send({"status": False, "error": "not implemented"})
             self._send({"error": "not found"}, 404)
+        def _xml(self, result=None, fault=None):
+            if rnd is not None and fault is None and rnd.random() < 0.6: result = _mangle(json.loads(json.dumps(result)), rnd)
+            b = (xmlrpc.client.dumps(fault) if fault else xmlrpc.client.dumps((result,), methodresponse=True, allow_none=True)).encode()
+            self.send_response(200); self.send_header("Content-Type", "text/xml"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
         def do_POST(self):
             u = urllib.parse.urlparse(self.path); raw = self._body()
             if u.path == "/deluge/json":
@@ -118,6 +171,28 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                 if m == "config": return self._send({"version": "1.1", "result": [{"Name": "MainDir", "Value": "/data"}, {"Name": "DestDir", "Value": "/data/completed"}]})
                 if m == "editqueue": world.setdefault("_nz_edits", []).append(r.get("params")); return self._send({"version": "1.1", "result": True})
                 return self._send({"version": "1.1", "error": {"name": "JSONRPCError", "code": -32601, "message": "Method not found"}})
+            if u.path == "/rtorrent/RPC2":   # rTorrent 0.16 XML-RPC, recorded 2026-11-18: ratio in thousandths, i8 integers, files relative to d.directory
+                params, m = xmlrpc.client.loads(raw); now = __import__("time").time()
+                if m == "d.multicall2":
+                    return self._xml([[t["id"], t["name"], t["dir"], t.get("label", ""), t.get("complete", 1), t.get("ratio", 0), t.get("private", 0), 1, 1, int(now - t["finished_ago"]) if t.get("complete", 1) else 0, 0] for t in world.get("rtorrent", [])])
+                if m == "system.multicall":
+                    out = []
+                    for call in params[0]:
+                        t = next((t for t in world.get("rtorrent", []) if t["id"] == call["params"][0]), None) if call.get("methodName") == "f.multicall" else None
+                        out.append([[[f] for f in t["files"]]] if t else {"faultCode": -501, "faultString": "Could not find info-hash."})
+                    return self._xml(out)
+                if m in ("system.client_version", "system.listMethods"): return self._xml("0.16.25" if m == "system.client_version" else ["d.multicall2", "f.multicall", "system.multicall"])
+                world.setdefault("_writes", []).append(("rTorrent", m)); return self._xml(fault=xmlrpc.client.Fault(-506, "method not defined"))
+            if u.path == "/transmission/transmission/rpc":   # Transmission 4.1, recorded 2026-11-18: a 409 with the session id first
+                if self.headers.get("X-Transmission-Session-Id") != "sid-test":
+                    b = b"<h1>409: Conflict</h1>"; self.send_response(409); self.send_header("X-Transmission-Session-Id", "sid-test"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
+                r = json.loads(raw or b"{}")
+                if r.get("method") == "torrent-get":
+                    return self._send({"arguments": {"torrents": [{"addedDate": 1794992153, "doneDate": 1794992153 if t["done"] >= 1 else 0, "downloadDir": t["dir"], "error": 0, "errorString": "",
+                                                                    "files": [{"begin_piece": 0, "bytesCompleted": 1, "end_piece": 1, "length": 1, "name": f} for f in t["files"]], "hashString": t["hash"], "id": t["id"], "isFinished": False,
+                                                                    "isPrivate": t["private"], "labels": t.get("labels", []), "leftUntilDone": 0 if t["done"] >= 1 else 1000, "name": t["name"], "percentDone": t["done"], "secondsSeeding": t["seeding"],
+                                                                    "status": t["status"], "totalSize": 1, "uploadRatio": t["ratio"]} for t in world.get("transmission", [])]}, "result": "success", "tag": r.get("tag")})
+                world.setdefault("_writes", []).append(("Transmission", r.get("method"))); return self._send({"arguments": {}, "result": "method name not recognized"})
             if u.path == "/qbit/api/v2/auth/login":
                 f = urllib.parse.parse_qs(raw.decode()); ok = f.get("username", [""])[0] == "test" and f.get("password", [""])[0] == "test"
                 self._cookie = "SID=xyz; Path=/"; return self._send(None, 200 if ok else 403, b"Ok." if ok else b"Fails.")

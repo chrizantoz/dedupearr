@@ -44,7 +44,7 @@ Each row is one file with a coloured chip:
 | 🟢 **In the recycle bin** | in a recycle bin, within the rule | nothing yet |
 | 🔴 **Unsorted folder** | the folder name does not say whether this is library, downloads or a recycle bin | tell Dedupearr with `LIBRARY_DIRS`, `DOWNLOAD_DIRS` or `RECYCLE_DIRS` |
 
-Each row has one plain sentence that says what the file is and what would change. Download rows also show what the client says ("Deluge: seeding, ratio 1.31, 3 days") and a **can go now** chip when your seeding rule is met, or when nothing holds the file at all. An **evidence** link underneath opens the numbers: the inodes, link counts, sizes and whether the checksums matched, plus the path of the other file when there is one.
+Each row has one plain sentence that says what the file is and what would change. Download rows also show what the client says ("Deluge: seeding, ratio 1.31, 3 days"). Dedupearr reads Deluge, NZBGet, qBittorrent, rTorrent, Transmission and SABnzbd. Connect Sonarr or Radarr and it finds them on the arrs' own *Download Clients* page; a client that needs a password or API key still needs it typed in, because the arrs never share those. A row from rTorrent or Transmission whose seeding is done says **Remove it in rTorrent first**: Dedupearr reads those two but does not remove torrents from them yet, so it never moves a file they still expect to find and a **can go now** chip when your seeding rule is met, or when nothing holds the file at all. An **evidence** link underneath opens the numbers: the inodes, link counts, sizes and whether the checksums matched, plus the path of the other file when there is one.
 
 ## 🗂️ The tabs
 

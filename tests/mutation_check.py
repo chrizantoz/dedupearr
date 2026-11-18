@@ -39,7 +39,13 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("Put back after a relink overwrites something new", '(so.st_ino, so.st_size) == (r["link_ino"], r["size"]) and so.st_nlink >= 2', 'True'),
     ("remove fix rides along with 'Move all'", 'not (kind == "remove" and ci and ci.get("client") in REMOVE_READERS)', 'True'),
     ("remove fix leaves the file in the bin when the client refuses", 'back, _ = restore_held(c, obj["held_id"])', 'back = 0'),
-    ("failed usenet job called seeding only", 'elif ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in', 'elif False and ci and ci.get("client") == "NZBGet" and ci.get("finished") and code in'),
+    ("failed usenet job called seeding only", 'elif is_usenet(ci) and ci.get("finished") and code in', 'elif False and is_usenet(ci) and ci.get("finished") and code in'),
+    ("client reader: rTorrent ratio read as a whole number", '"ratio": _num(ratio) / 1000', '"ratio": _num(ratio)'),
+    ("client reader: Transmission's own 'finished' trusted", 'done = _num(t.get("percentDone")) >= 1 and _num(t.get("leftUntilDone")) == 0', 'done = t.get("isFinished") is True'),
+    ("client reader: a switched-off client reported as broken", 'if name in soft:   # switched off in the arr', 'if False:   # switched off in the arr'),
+    ("client discovery from the arrs ignored", 'clients = {}; found = read_arr_clients();', 'clients = {}; found = [];'),
+    ("remove fix moves a file rTorrent still holds", 'if no_remove_call(ci): return 409, {"error": no_remove_sentence(ci)}', 'if False: return 409, {}'),
+    ("remove fix offered for a client it cannot tell", 'if v["fix_kind"] == "remove" and no_remove_call(ci):', 'if False:'),
 ]
 arg = sys.argv[1] if len(sys.argv) > 1 else str(datetime.date.today().timetuple().tm_yday % len(MUTANTS))
 todo = MUTANTS if arg == "all" else [] if arg == "anchors" else [MUTANTS[int(arg) % len(MUTANTS)]]
@@ -55,7 +61,7 @@ for name, old, new in todo:
     tmp = tempfile.mkdtemp(prefix="dedupearr-mut-")
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(tmp, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     open(os.path.join(tmp, "dedupearr.py"), "w").write(src.replace(old, new, 1))
-    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else []) + ([os.path.join(tmp, "tests", "digest.py")] if "morning message" in name else []) + ([os.path.join(tmp, "tests", "auditarr_link.py")] if "Auditarr" in name else [])
+    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet", "client")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else []) + ([os.path.join(tmp, "tests", "digest.py")] if "morning message" in name else []) + ([os.path.join(tmp, "tests", "auditarr_link.py")] if "Auditarr" in name else [])
     caught = any(subprocess.run([sys.executable, t], capture_output=True, text=True, timeout=600).returncode != 0 for t in suites)
     p = subprocess.run([sys.executable, suites[-1]], capture_output=True, text=True, timeout=600) if not caught else subprocess.CompletedProcess([], 1, "", "")
     print(f"{'PASS' if caught else 'FAIL'} mutant '{name}': {'caught by the suite' if caught else 'SURVIVED - the suite did not notice'}  ({[l for l in p.stdout.splitlines() if l.startswith('FAIL')][:2]})")
