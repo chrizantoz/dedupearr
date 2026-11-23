@@ -45,6 +45,7 @@ for w in range(N):
         if v["code"] == "BIN_RECENT" and (now - row["mtime"]) / 86400 > d.RECYCLE_DAYS: fail(f"world {w}: BIN_RECENT past the rule: {p}")
         if v["wasted"] not in (0, row["size"]): fail(f"world {w}: wasted is neither 0 nor the size: {p}")
         if v["wasted"] and v["code"] not in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD"): fail(f"world {w}: wasted on a verdict that is not waste: {v['code']} {p}")
+        if v["code"] in d.PLEX_CODES or "Plex" in v["evidence"]: fail(f"world {w}: a Plex verdict or Plex evidence although no Plex is connected: {v['code']} {p}")   # P2.5
         if not v["plain"].endswith(".") or "_" in v["label"]: fail(f"world {w}: sentence or label not plain: {v['label']!r} {v['plain'][-20:]!r}")
     d.scan(now=now + 5); S2 = d.state(c)
     if {i["path"]: i["code"] for i in S2["items"]} != {i["path"]: i["code"] for i in S["items"]}: fail(f"world {w}: a second scan of the same disk changed verdicts")

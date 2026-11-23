@@ -52,6 +52,11 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("settings: FIX_MODE settable from the page", 'unknown = [k for k in list(changes) + reset if k not in SETTABLE]', 'unknown = [k for k in list(changes) + reset if k not in SETTABLE and k != "FIX_MODE"]'),
     ("shared-mount test: two mounts called one", 'if set(lm) & set(dm) and same_dev:', 'if True:'),
     ("remove fix offered for a client it cannot tell", 'if v["fix_kind"] == "remove" and no_remove_call(ci):', 'if False:'),
+    ("Plex: the day of grace removed", 'if now - r["mtime"] < PLEX_GRACE_H * 3600: return None,', 'if False: return None,'),
+    ("Plex: a list that stops early treated as complete", 'if not md: raise ValueError(f"the list of its library {sec[\'title\']} stopped early ({start} of {total} items)")', 'if not md: return files'),
+    ("Plex: a library folder Plex never looks in is not named", 'return "NOT_IN_PLEX_FOLDER", f"no Plex library looks in this folder', 'return None, f"no Plex library looks in this folder'),
+    ("Plex: the token sent in the address", 'j = http_json(PLEX_URL + path, headers=h, timeout=timeout)', 'j = http_json(PLEX_URL + path + ("&" if "?" in path else "?") + "X-Plex-Token=" + PLEX_TOKEN, headers=h, timeout=timeout)'),
+    ("Plex: verdicts although Plex's folders are not folders seen here (path map missing)", 'if folders and not any(os.path.isdir(f) for f, _ in folders):', 'if False:'),
 ]
 arg = sys.argv[1] if len(sys.argv) > 1 else str(datetime.date.today().timetuple().tm_yday % len(MUTANTS))
 todo = MUTANTS if arg == "all" else [] if arg == "anchors" else [MUTANTS[int(arg) % len(MUTANTS)]]
@@ -67,7 +72,7 @@ for name, old, new in todo:
     tmp = tempfile.mkdtemp(prefix="dedupearr-mut-")
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(tmp, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     open(os.path.join(tmp, "dedupearr.py"), "w").write(src.replace(old, new, 1))
-    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet", "client")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else []) + ([os.path.join(tmp, "tests", "digest.py")] if "morning message" in name else []) + ([os.path.join(tmp, "tests", "auditarr_link.py")] if "Auditarr" in name else []) + ([os.path.join(tmp, "tests", "settings.py")] if name.startswith(("settings", "shared-mount")) else [])
+    suites = [os.path.join(tmp, "tests", "verdicts.py")] + ([os.path.join(tmp, "tests", "clients.py")] if any(w in name for w in ("seeding", "import", "usenet", "client")) else []) + ([os.path.join(tmp, "tests", "fixes.py")] if "holding" in name or "Put back" in name or "remove fix" in name or "relink" in name else []) + ([os.path.join(tmp, "tests", "digest.py")] if "morning message" in name else []) + ([os.path.join(tmp, "tests", "auditarr_link.py")] if "Auditarr" in name else []) + ([os.path.join(tmp, "tests", "settings.py")] if name.startswith(("settings", "shared-mount")) else []) + ([os.path.join(tmp, "tests", "plex.py")] if name.startswith("Plex") else [])
     caught = any(subprocess.run([sys.executable, t], capture_output=True, text=True, timeout=600).returncode != 0 for t in suites)
     p = subprocess.run([sys.executable, suites[-1]], capture_output=True, text=True, timeout=600) if not caught else subprocess.CompletedProcess([], 1, "", "")
     print(f"{'PASS' if caught else 'FAIL'} mutant '{name}': {'caught by the suite' if caught else 'SURVIVED - the suite did not notice'}  ({[l for l in p.stdout.splitlines() if l.startswith('FAIL')][:2]})")

@@ -32,6 +32,18 @@ Open `http://<host>:3092`.
 
 Both apps read the same share and do not interfere in phase 1. When Dedupearr's fixes arrive (phase 3) the two apps coordinate: Dedupearr reads Auditarr's actions log, treats Auditarr's trash folder as a recycle bin, and never relinks a file whose header Auditarr edited. Give Dedupearr its own port (3092), its own config folder and a scan time an hour away from Auditarr's run.
 
+## Connecting Plex (optional)
+
+With Plex connected, Dedupearr names the library files Plex does not show: a folder no Plex library looks in, or a file Plex has not indexed. Set it on the container, or type the same on the **Setup** tab:
+
+| Setting | What it is |
+|---|---|
+| `PLEX_URL` | Plex's address, such as `http://192.168.1.10:32400` |
+| `PLEX_TOKEN` | Plex's token. In Plex, open any film's **Get Info → View XML**; the address of the page that opens ends in `X-Plex-Token=…`. It is sent to Plex in a request header only and never shown on the page or written to a log |
+| `PLEX_PATH_MAP` | Only when Plex sees your files under another path than Dedupearr: `plexpath=ourpath`, several separated by commas, such as `/movies=/data/media/movies,/tv=/data/media/tv`. Container only |
+
+Leave `PLEX_URL` empty and nothing about Plex appears anywhere. Dedupearr only reads Plex. If the About tab says *Plex could not be read*, the reason is beside it, and no file is judged by Plex until it is solved.
+
 ## Updating
 
 - **Unraid:** Docker tab → check for updates → **update** on Dedupearr. The database and the ignore list live in the config folder and survive.

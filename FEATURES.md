@@ -33,9 +33,22 @@ The left column is the internal code (handy when searching the code or the API);
 | EXTRA | **Extra, not library**: a download whose name or folder marks it as not library material (an opening or ending without credits, NCOP/NCED; a trailer, sample, menu or making-of; a disc image, `.iso`; software or games), when no client or arr says more. Quiet: not waste and not a decision. An episode whose title merely says *Menu* or *Samples* stays a download to decide on; a finished usenet job stays a decision | 0 |
 | BIN_OLD | in a recycle bin longer than `RECYCLE_DAYS` | the file's size |
 | BIN_RECENT | in a recycle bin, within the rule | 0 |
+| NOT_IN_PLEX_FOLDER | **Outside Plex's folders** (only with Plex connected): a library file in a folder no Plex library looks in, so Plex never shows it. Add the folder to a Plex library, move the file, or press Ignore if it is meant to stay out | 0 |
+| NOT_IN_PLEX | **Plex does not show it** (only with Plex connected): a library file inside a Plex library folder that Plex has not indexed: a name Plex cannot match, a trailer or other extra, or a scan that has not run. Never given to a file less than a day old. A quiet note | 0 |
 | OTHER | the folder name gives no hint (not library, downloads or recycle bin); set `LIBRARY_DIRS` / `DOWNLOAD_DIRS` / `RECYCLE_DIRS` | 0 |
 
-**Needs a decision** = DUPLICATE_COPY, DUPLICATE_HEADER, DOWNLOAD_UNMATCHED, DOWNLOAD_OTHER_RELEASE, LEFTOVER, ORPHAN, BIN_OLD and OTHER. Everything else is fine and shown under *Everything fine*. Each download row also carries its client's state ("Deluge: seeding, ratio 1.31, 3 days"; Deluge, NZBGet, qBittorrent, rTorrent, Transmission and SABnzbd are read, and with Sonarr or Radarr connected they are found on the arrs' own Download Clients page) and a **can go now** chip when your seeding rule (`SEED_MIN_RATIO` and `SEED_MIN_DAYS`, both reached by default; `SEED_RULE=either` relaxes it) is met or nothing holds the file.
+**Needs a decision** = DUPLICATE_COPY, DUPLICATE_HEADER, DOWNLOAD_UNMATCHED, DOWNLOAD_OTHER_RELEASE, LEFTOVER, ORPHAN, BIN_OLD, OTHER and NOT_IN_PLEX_FOLDER (a whole folder Plex cannot see is yours to decide; a single file Plex has not indexed, NOT_IN_PLEX, is only a note). Everything else is fine and shown under *Everything fine*. Each download row also carries its client's state ("Deluge: seeding, ratio 1.31, 3 days"; Deluge, NZBGet, qBittorrent, rTorrent, Transmission and SABnzbd are read, and with Sonarr or Radarr connected they are found on the arrs' own Download Clients page) and a **can go now** chip when your seeding rule (`SEED_MIN_RATIO` and `SEED_MIN_DAYS`, both reached by default; `SEED_RULE=either` relaxes it) is met or nothing holds the file.
+
+### 📺 What Plex shows (P2.5)
+
+With Plex's address and token set (`PLEX_URL`, `PLEX_TOKEN`, or the Plex block on the Setup tab), each nightly scan asks Plex two things: which folders its film and show libraries look in, and which files it has indexed. Library files are then compared with that answer. Only library files: downloads, recycle bins and unsorted folders are never judged by Plex.
+
+- A file that already has a more specific verdict (a real copy, two names for one file) keeps it; what Plex says is added to its evidence.
+- Music and photo libraries are skipped. A video inside one of their folders is left alone, and About names the skipped libraries.
+- Nothing is guessed from half an answer. If Plex is down, refuses the token, or a single page of a single library fails, no file gets a Plex verdict that night, and About says "Plex could not be read" with the reason.
+- If Plex sees your files under another path than Dedupearr does, set `PLEX_PATH_MAP` (`plexpath=ourpath`). Until then nothing is compared, and About says so.
+- The token travels in a request header only. It is never written to a log, an address or the page.
+- Dedupearr only reads Plex. It never starts a scan there or changes anything.
 
 ## 📄 The pages
 

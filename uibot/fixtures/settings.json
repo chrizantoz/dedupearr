@@ -153,7 +153,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:49729/sonarr",
+   "value": "http://127.0.0.1:57855/sonarr",
    "saved": null
   },
   {
@@ -177,7 +177,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:49729/radarr",
+   "value": "http://127.0.0.1:57855/radarr",
    "saved": null
   },
   {
@@ -273,7 +273,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:49729/deluge",
+   "value": "http://127.0.0.1:57855/deluge",
    "saved": null
   },
   {
@@ -297,7 +297,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:49729/nzbget",
+   "value": "http://127.0.0.1:57855/nzbget",
    "saved": null
   },
   {
@@ -333,7 +333,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:49729/qbit",
+   "value": "http://127.0.0.1:57855/qbit",
    "saved": null
   },
   {
@@ -467,6 +467,30 @@
    "locked": false,
    "value": "",
    "saved": null
+  },
+  {
+   "name": "PLEX_URL",
+   "group": "conn:Plex",
+   "kind": "url",
+   "label": "Address",
+   "hint": "",
+   "default": "",
+   "source": "container",
+   "locked": true,
+   "value": "http://127.0.0.1:57855/plex",
+   "saved": null
+  },
+  {
+   "name": "PLEX_TOKEN",
+   "group": "conn:Plex",
+   "kind": "secret",
+   "label": "Token",
+   "hint": "",
+   "default": "",
+   "source": "container",
+   "locked": true,
+   "value": "",
+   "saved": true
   }
  ],
  "groups": [
@@ -481,7 +505,8 @@
   "rTorrent",
   "Transmission",
   "SABnzbd",
-  "Auditarr"
+  "Auditarr",
+  "Plex"
  ],
  "fixed": {
   "FIX_MODE": "dryrun",

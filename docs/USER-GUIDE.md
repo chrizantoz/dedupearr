@@ -43,6 +43,8 @@ Each row is one file with a coloured chip:
 | ⚪ **Looks alike** | same size as a library file but different content | not a duplicate; worth a look if you expected one copy |
 | ⚪ **Old recycle-bin file** | in a recycle bin longer than your rule (30 days by default) | empty it |
 | 🟢 **In the recycle bin** | in a recycle bin, within the rule | nothing yet |
+| 🟡 **Outside Plex's folders** | only with Plex connected: a library file in a folder none of your Plex libraries looks in, so Plex never shows it | add the folder to a Plex library, or move the file into a folder Plex already has; press **Ignore** if the folder is meant to stay out of Plex. No space is wasted |
+| ⚪ **Plex does not show it** | only with Plex connected: a library file inside a Plex folder that Plex has not indexed. Usually a name Plex cannot match, a trailer or other extra, or a scan that has not run | rename it the way Plex expects, or run a library scan in Plex. A note, not a decision; a file less than a day old is never called this |
 | 🔴 **Unsorted folder** | the folder name does not say whether this is library, downloads or a recycle bin | tell Dedupearr with `LIBRARY_DIRS`, `DOWNLOAD_DIRS` or `RECYCLE_DIRS` |
 
 Each row has one plain sentence that says what the file is and what would change. Download rows also show what the client says ("Deluge: seeding, ratio 1.31, 3 days"). Dedupearr reads Deluge, NZBGet, qBittorrent, rTorrent, Transmission and SABnzbd. Connect Sonarr or Radarr and it finds them on the arrs' own *Download Clients* page; a client that needs a password or API key still needs it typed in, because the arrs never share those. A row from rTorrent or Transmission whose seeding is done says **Remove it in rTorrent first**: Dedupearr reads those two but does not remove torrents from them yet, so it never moves a file they still expect to find and a **can go now** chip when your seeding rule is met, or when nothing holds the file at all. An **evidence** link underneath opens the numbers: the inodes, link counts, sizes and whether the checksums matched, plus the path of the other file when there is one.
@@ -58,7 +60,7 @@ Each row has one plain sentence that says what the file is and what would change
 
 ## 🔎 Filters above the list
 
-**Needs a decision** (the default) · **Stored twice** · **No match** · **Old bin files** · **Unsorted** · **Everything fine** · **Everything**. The search box narrows by title, path or verdict as you type. The page shows at most 500 rows; narrow the filter or search for the rest.
+**Needs a decision** (the default) · **Stored twice** · **No match** · **Old bin files** · **Unsorted** · **Not in Plex** (only with Plex connected: every library file Plex does not show) · **Everything fine** · **Everything**. The search box narrows by title, path or verdict as you type. The page shows at most 500 rows; narrow the filter or search for the rest.
 
 Under the filters is a second row, one button per **kind of media**: 📺 TV shows · 🍥 Anime · 🎬 Movies · 🔞 Adult · 🏟️ Sports · 🎵 Music · 📦 Other. Each count follows the filter above it, so "Needs a decision" plus "Anime" shows only the anime files that need you. The page remembers the kind you picked. Every row also carries a small kind tag next to its title, and the **Space** tab totals files and wasted space per kind.
 
@@ -96,6 +98,17 @@ With an [ntfy](https://ntfy.sh) topic set (`NTFY_URL`), Dedupearr sends one mess
 ## 🧺 The holding bin
 
 A fix never deletes. It moves the file to `HOLDING_DIR` (by default `.dedupearr-holding` at the top of your first scan folder), under the day it went and its full old path, so you can always see where it came from. The move is a rename inside the same share: instant, no copying, no extra space. Dedupearr refuses the move when the file changed since the scan, when the bin would be on another disk, or when the share is mounted read-only (the default template mounts it read-only; switch the **Data** path to read-write before you turn fixes on). The scan never counts the holding bin as library or downloads.
+
+## 📺 What Plex shows
+
+Dedupearr can ask Plex which of your library files it actually shows. On the **Setup** tab, type Plex's address (such as `http://192.168.1.10:32400`) and its token into the Plex block, press **Save**, then **Test**: it answers with the names of your Plex libraries. (To find the token: in Plex, open any film's **Get Info → View XML**; the address of the page that opens ends in `X-Plex-Token=…`.) The next scan then compares your library with Plex:
+
+- **Outside Plex's folders** means the file sits in a folder none of your Plex libraries looks in. It is in your library, it takes space, and nobody can watch it in Plex. This is almost always a whole folder, so it is listed under *Needs a decision*: add the folder to a Plex library, or press **Ignore** on files that are meant to stay out of Plex.
+- **Plex does not show it** means the folder is one Plex looks in, but this file is not in Plex's list. Usually Plex could not match the name, or the file is a trailer or other extra, which Plex files under its film. It is a note, not a decision. A file less than a day old is never called this, because Plex may not have scanned yet.
+
+Neither wastes space, and neither has a fix button: the change is made in Plex, or by renaming or moving the file. The **Not in Plex** filter lists both kinds.
+
+Dedupearr never guesses. If Plex is switched off, refuses the token, or answers only in part, no file is called anything about Plex that night, and the **About** tab says *Plex could not be read* with the reason. If About says none of Plex's folders is a folder Dedupearr can see, Plex sees your files under another path (for example `/movies` where Dedupearr sees `/data/media/movies`): set `PLEX_PATH_MAP` on the container, as `plexpath=ourpath`. Music and photo libraries are not read.
 
 ## 🔒 Sharing the files with Auditarr
 

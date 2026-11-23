@@ -7,7 +7,7 @@
  "health": [
   {
    "level": "ok",
-   "text": "Last scan 2026-11-22 22:53, 31 files in 0 s."
+   "text": "Last scan 2026-11-23 02:36, 36 files in 0 s."
   },
   {
    "level": "ok",
@@ -47,6 +47,10 @@
   },
   {
    "level": "ok",
+   "text": "Plex: 2 libraries, 7 files indexed; 1 music, photo or other library skipped (Music)."
+  },
+  {
+   "level": "ok",
    "text": "Radarr also uses Flood, which Dedupearr cannot read yet."
   },
   {
@@ -69,38 +73,40 @@
   "SEED_MIN_DAYS": 14.0,
   "SEED_RULE": "auto",
   "CLIENT_PATH_MAP": [],
+  "PLEX_PATH_MAP": [],
   "FIX_MODE": "dryrun",
-  "HOLDING_DIR": "/tmp/dedupearr-api-vcozy4st/data/.dedupearr-holding",
+  "HOLDING_DIR": "/tmp/dedupearr-api-ftatjn15/data/.dedupearr-holding",
   "HOLD_DAYS": 14,
   "connections": {
-   "sonarr": "http://127.0.0.1:49729/sonarr",
-   "radarr": "http://127.0.0.1:49729/radarr",
+   "sonarr": "http://127.0.0.1:57855/sonarr",
+   "radarr": "http://127.0.0.1:57855/radarr",
    "whisparr": "not set",
    "sportarr": "not set",
    "lidarr": "not set",
-   "Deluge": "http://127.0.0.1:49729/deluge",
-   "NZBGet": "http://127.0.0.1:49729/nzbget",
-   "qBittorrent": "http://127.0.0.1:49729/qbit",
+   "Deluge": "http://127.0.0.1:57855/deluge",
+   "NZBGet": "http://127.0.0.1:57855/nzbget",
+   "qBittorrent": "http://127.0.0.1:57855/qbit",
    "rTorrent": "not set",
    "Transmission": "not set",
    "SABnzbd": "not set",
-   "Auditarr": "not set"
+   "Auditarr": "not set",
+   "Plex": "http://127.0.0.1:57855/plex"
   }
  },
  "runs": [
   {
    "id": 1,
-   "started": 1795405981.9222932,
-   "finished": 1795405982.112198,
-   "files": 31,
-   "bytes": 148897792,
+   "started": 1795419405.3724568,
+   "finished": 1795419405.5816178,
+   "files": 36,
+   "bytes": 232783872,
    "wasted": 66060288,
    "note": "ok"
   }
  ],
  "log": [
-  "2026-11-22 22:53:01 Dedupearr dev listening on :37221",
-  "2026-11-22 22:53:02 scan done: 31 files, 148.9 MB, 66.1 MB that can come back"
+  "2026-11-23 02:36:45 Dedupearr dev listening on :55379",
+  "2026-11-23 02:36:45 scan done: 36 files, 232.8 MB, 66.1 MB that can come back"
  ],
  "errors": [],
  "links": {

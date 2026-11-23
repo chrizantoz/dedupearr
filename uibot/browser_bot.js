@@ -62,6 +62,14 @@ const rawCode = /\b[A-Z]{3,}_[A-Z_]{3,}\b/;
       await page.locator("#chips button[data-filter=all]").click(); await page.waitForTimeout(150);
       const chips = await page.locator("#rows .chip", { hasText: /^can go now$/ }).count();
       check(`${label}: persona: 'can go now' chips match what the seeding rule frees`, chips === Math.min(stateNow, 500), `${chips} vs ${stateNow}`);
+      // persona 2d (P2.5): "which of my files does Plex not show?" -> the Not in Plex chip, there only with Plex connected, shows exactly those files, none with a fix button
+      const px = JSON.parse(await page.evaluate(async () => { const r = await fetch("api/state"); const s = await r.json(); return JSON.stringify({ on: Object.keys(s.plex || {}).length > 0, n: s.items.filter(i => i.code === "NOT_IN_PLEX_FOLDER" || i.code === "NOT_IN_PLEX").length }); }));
+      const pxChip = page.locator("#chips button[data-filter=plex]");
+      if (px.on || px.n) {
+        await pxChip.click(); await page.waitForTimeout(150); const pr = page.locator("#rows tr[id^=r-]");
+        check(`${label}: persona: the Not in Plex filter shows exactly the files Plex does not show, and offers no fix for them`, (await pr.count()) === Math.min(px.n, 500) && (await page.locator("#rows button[data-fix]").count()) === 0, `${await pr.count()} vs ${px.n}`);
+        if (px.n) check(`${label}: persona: the row says what would make Plex show it`, /Plex/.test(await pr.first().locator("td").nth(2).textContent()));
+      } else check(`${label}: persona: without Plex connected there is no Not in Plex chip`, (await pxChip.count()) === 0);
       // persona 2c: "what would the fix do?" -> Preview fix shows steps and says nothing changed (a dry run is safe even on a live server)
       const pf = page.locator("#rows button[data-fix]").first();
       if (await pf.count()) { await pf.click(); await page.waitForSelector("#rows .plan:not([hidden]) li", { timeout: 10000 }).catch(() => {}); check(`${label}: persona: Preview fix lists the steps and says nothing changed`, (await page.locator("#rows .plan:not([hidden]) li").count()) > 0 && /nothing changed/i.test(await page.locator("#rows .plan:not([hidden])").first().textContent()), await page.locator("#rows .plan:not([hidden])").first().textContent().catch(() => "no plan")); }

@@ -27,7 +27,7 @@
     "kind": "Deluge",
     "known": true,
     "enabled": true,
-    "url": "http://127.0.0.1:49729/deluge",
+    "url": "http://127.0.0.1:57855/deluge",
     "name": "Deluge",
     "priority": 1
    },
@@ -36,7 +36,7 @@
     "kind": "NZBGet",
     "known": true,
     "enabled": true,
-    "url": "http://127.0.0.1:49729/nzbget",
+    "url": "http://127.0.0.1:57855/nzbget",
     "name": "Nzbget",
     "priority": 1
    },
@@ -45,7 +45,7 @@
     "kind": "rTorrent",
     "known": true,
     "enabled": true,
-    "url": "http://127.0.0.1:49729/rtorrent/RPC2",
+    "url": "http://127.0.0.1:57855/rtorrent/RPC2",
     "name": "RTorrent",
     "priority": 2
    },
@@ -54,7 +54,7 @@
     "kind": "Transmission",
     "known": true,
     "enabled": true,
-    "url": "http://127.0.0.1:49729/transmission/transmission/rpc",
+    "url": "http://127.0.0.1:57855/transmission/transmission/rpc",
     "name": "Transmission",
     "priority": 2
    },
@@ -63,7 +63,7 @@
     "kind": "SABnzbd",
     "known": true,
     "enabled": true,
-    "url": "http://127.0.0.1:49729/sabnzbd",
+    "url": "http://127.0.0.1:57855/sabnzbd",
     "name": "Sabnzbd",
     "priority": 1
    },
@@ -72,7 +72,7 @@
     "kind": "qBittorrent",
     "known": true,
     "enabled": false,
-    "url": "http://127.0.0.1:49729/qbit",
+    "url": "http://127.0.0.1:57855/qbit",
     "name": "QBittorrent",
     "priority": 3
    },
@@ -90,7 +90,7 @@
     "kind": "Flood",
     "known": false,
     "enabled": true,
-    "url": "http://127.0.0.1:49729",
+    "url": "http://127.0.0.1:57855",
     "name": "Flood",
     "priority": 1
    }
@@ -104,7 +104,7 @@
     "SONARR_URL",
     "SONARR_APIKEY"
    ],
-   "url": "http://127.0.0.1:49729/sonarr",
+   "url": "http://127.0.0.1:57855/sonarr",
    "source": "container",
    "locked": true,
    "status": "ok",
@@ -117,7 +117,7 @@
     "RADARR_URL",
     "RADARR_APIKEY"
    ],
-   "url": "http://127.0.0.1:49729/radarr",
+   "url": "http://127.0.0.1:57855/radarr",
    "source": "container",
    "locked": true,
    "status": "ok",
@@ -169,7 +169,7 @@
     "DELUGE_URL",
     "DELUGE_PASSWORD"
    ],
-   "url": "http://127.0.0.1:49729/deluge",
+   "url": "http://127.0.0.1:57855/deluge",
    "source": "container",
    "locked": true,
    "status": "ok",
@@ -183,7 +183,7 @@
     "NZBGET_USER",
     "NZBGET_PASSWORD"
    ],
-   "url": "http://127.0.0.1:49729/nzbget",
+   "url": "http://127.0.0.1:57855/nzbget",
    "source": "container",
    "locked": true,
    "status": "ok",
@@ -197,7 +197,7 @@
     "QBIT_USER",
     "QBIT_PASSWORD"
    ],
-   "url": "http://127.0.0.1:49729/qbit",
+   "url": "http://127.0.0.1:57855/qbit",
    "source": "container",
    "locked": true,
    "status": "ok",
@@ -211,7 +211,7 @@
     "RTORRENT_USER",
     "RTORRENT_PASSWORD"
    ],
-   "url": "http://127.0.0.1:49729/rtorrent/RPC2",
+   "url": "http://127.0.0.1:57855/rtorrent/RPC2",
    "source": "arr",
    "locked": false,
    "status": "ok",
@@ -225,7 +225,7 @@
     "TRANSMISSION_USER",
     "TRANSMISSION_PASSWORD"
    ],
-   "url": "http://127.0.0.1:49729/transmission/transmission/rpc",
+   "url": "http://127.0.0.1:57855/transmission/transmission/rpc",
    "source": "arr",
    "locked": false,
    "status": "ok",
@@ -238,7 +238,7 @@
     "SABNZBD_URL",
     "SABNZBD_APIKEY"
    ],
-   "url": "http://127.0.0.1:49729/sabnzbd",
+   "url": "http://127.0.0.1:57855/sabnzbd",
    "source": "arr",
    "locked": true,
    "status": "ok",
@@ -255,6 +255,19 @@
    "locked": false,
    "status": "",
    "note": ""
+  },
+  {
+   "name": "Plex",
+   "kind": "plex",
+   "fields": [
+    "PLEX_URL",
+    "PLEX_TOKEN"
+   ],
+   "url": "http://127.0.0.1:57855/plex",
+   "source": "container",
+   "locked": true,
+   "status": "ok",
+   "note": "2 libraries, 7 files indexed; 1 music, photo or other library skipped (Music)"
   }
  ],
  "writable": true,

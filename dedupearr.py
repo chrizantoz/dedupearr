@@ -31,6 +31,10 @@ nothing is touched. With FIX_MODE=on the fixes in LIVE_KINDS run (P3.1: orphans 
   BIN_OLD            in a recycle bin longer than RECYCLE_DAYS                                     wasted size
   BIN_RECENT         in a recycle bin, within the rule                                            wasted 0
   OTHER              in a folder that is neither library, downloads nor recycle bin               wasted 0
+P2.5, only with Plex connected (PLEX_URL) and only after a complete read of it:
+  NOT_IN_PLEX_FOLDER a library file in no folder of any Plex library: Plex never looks there      wasted 0, needs you
+  NOT_IN_PLEX        a library file inside a Plex library folder that Plex has not indexed,
+                     and older than a day (Plex may not have scanned a newer one yet)             wasted 0, a quiet note
 """
 import os, re, sys, json, time, shutil, sqlite3, hashlib, threading, datetime, argparse, traceback, base64, urllib.request, urllib.parse, http.cookiejar
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -78,6 +82,12 @@ AUDITARR_URL = _env("AUDITARR_URL").rstrip("/")   # P2.4: Auditarr's address; De
 AUDITARR_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("AUDITARR_PATH_MAP").split(",") if "=" in x]   # auditarrpath=ourpath when Auditarr sees the files under another path
 AUDITARR_TRASH_NAMES = {".media-audit-trash", ".auditarr-trash"}   # Auditarr's trash folder by name, for when no address is set
 AUDITARR_STATUS = {}   # {"ok": bool, "n": int, "note": str} after a scan asked; shown on About
+PLEX_URL = _env("PLEX_URL").rstrip("/"); PLEX_TOKEN = _env("PLEX_TOKEN")   # P2.5: Plex's address and token; Dedupearr reads which library files Plex has indexed. The token only ever travels in a header
+PLEX_PATH_MAP = [tuple(x.split("=", 1)) for x in _env("PLEX_PATH_MAP").split(",") if "=" in x]   # plexpath=ourpath when Plex sees the files under another path
+PLEX_STATUS = {}   # {"ok": bool, "n": int, "libraries": int, "note": str} after a scan asked; shown on About
+PLEX_GRACE_H = 24   # a library file younger than this is never called unindexed: Plex may simply not have scanned yet
+PLEX_PAGE = 1000; PLEX_MAX_PAGES = 500   # items per request, and the most requests for one library; a library that does not end by then counts as not read
+PLEX_CODES = ("NOT_IN_PLEX_FOLDER", "NOT_IN_PLEX")
 CLIENT_STATUS = {}   # "Deluge" -> {"ok": bool, "n": int, "note": str}; shown on About
 
 def map_client_path(p):
@@ -436,6 +446,88 @@ def auditarr_status():
     except Exception: pass
     return AUDITARR_STATUS
 
+# ------------------------------------------------------------------------------------------------------------------- Plex (P2.5)
+# Which library files Plex has indexed. Read-only: two kinds of GET, the token in a header, never in the address or a log line.
+# The rule for the whole reader: a list with a hole in it is no list. One library that fails, one page that comes back short, one item
+# without its file, and nothing is said about Plex that night; a file is only called "not in Plex" from a complete answer.
+def _plex_slashes(p): return p.replace("\\", "/") if re.match(r"[A-Za-z]:\\|\\\\", p) else p   # a Plex on Windows says C:\Media\Film.mkv
+def map_plex_path(p):
+    p = _plex_slashes(p)
+    for a, b in PLEX_PATH_MAP:
+        a = _plex_slashes(a).rstrip("/")
+        if p == a or p.startswith(a + "/"): return b.rstrip("/") + p[len(a):]   # on a folder boundary: /media never rewrites /media2
+    return p
+def plex_get(path, start=None, timeout=None):
+    """One GET to Plex, JSON asked for by header. -> its MediaContainer. With start, one page of PLEX_PAGE items from there."""
+    h = {"Accept": "application/json"}
+    if PLEX_TOKEN: h["X-Plex-Token"] = PLEX_TOKEN
+    if start is not None: h["X-Plex-Container-Start"] = str(start); h["X-Plex-Container-Size"] = str(PLEX_PAGE)
+    j = http_json(PLEX_URL + path, headers=h, timeout=timeout); mc = j.get("MediaContainer") if isinstance(j, dict) else None
+    if not isinstance(mc, dict): raise ValueError("something answered at its address, but not Plex (another app, or a sign-in page)")
+    return mc
+def _plex_count(mc, name="size"): return mc[name] if isinstance(mc.get(name), int) and not isinstance(mc.get(name), bool) else None
+def plex_sections(timeout=None):
+    """Plex's libraries: [{"key", "type", "title", "folders": [as Dedupearr sees them]}], by title so the order Plex lists them in never matters."""
+    mc = plex_get("/library/sections", timeout=timeout); dirs = mc.get("Directory", []); out = []
+    if not isinstance(dirs, list) or _plex_count(mc) not in (None, len(dirs)): raise ValueError("its list of libraries came back incomplete")
+    for s in dirs:
+        locs = s.get("Location") if isinstance(s, dict) else None
+        if not isinstance(locs, list) or not locs or not all(isinstance(l, dict) and isinstance(l.get("path"), str) and l["path"] for l in locs) or not isinstance(s.get("type"), str) or not isinstance(s.get("key"), (str, int)) or isinstance(s["key"], bool) or s["key"] == "":
+            raise ValueError("one of its libraries came back without its type or its folders")
+        out.append({"key": str(s["key"]), "type": s["type"], "title": re.sub(r"[^\w ,.'&()-]", " ", str(s.get("title") or "")).strip()[:60] or f"number {s['key']}", "folders": sorted({map_plex_path(l["path"]).rstrip("/") or "/" for l in locs})})
+    return sorted(out, key=lambda s: (s["title"], s["key"]))
+def plex_files(sec, timeout=None):
+    """Every file one film or show library has indexed (films: type 1; shows: their episodes, type 4), page by page.
+    Raises when a page is not Plex's, is short, or the pages do not add up to the total Plex gave: never a partial list."""
+    files = set(); start = 0; where = f"/library/sections/{urllib.parse.quote(sec['key'], safe='')}/all?type={1 if sec['type'] == 'movie' else 4}"
+    for _ in range(PLEX_MAX_PAGES):
+        mc = plex_get(where, start, timeout); md = mc.get("Metadata", []); total = _plex_count(mc, "totalSize")
+        if not isinstance(md, list) or _plex_count(mc) not in (None, len(md)): raise ValueError(f"the list of its library {sec['title']} came back incomplete")
+        for m in md:
+            media = m.get("Media") if isinstance(m, dict) else None
+            parts = [pt for me in media for pt in (me.get("Part") if isinstance(me, dict) and isinstance(me.get("Part"), list) and me["Part"] else [None])] if isinstance(media, list) and media else [None]
+            if not all(isinstance(pt, dict) and isinstance(pt.get("file"), str) and pt["file"] for pt in parts): raise ValueError(f"an item of its library {sec['title']} came back without its file")
+            files.update(map_plex_path(pt["file"]) for pt in parts)
+        start += len(md)
+        if (start >= total) if total is not None else (len(md) < PLEX_PAGE):
+            if total is not None and start != total: raise ValueError(f"the list of its library {sec['title']} did not add up ({start} of {total} items)")
+            return files
+        if not md: raise ValueError(f"the list of its library {sec['title']} stopped early ({start} of {total} items)")
+    raise ValueError(f"its library {sec['title']} has more than {PLEX_MAX_PAGES * PLEX_PAGE:,} items, so its list was not read to the end")
+def plex_error(e):
+    """What went wrong, in words, and never with the token in it."""
+    if isinstance(e, urllib.error.HTTPError): t = "it refused the token (set the Plex token again)" if e.code in (401, 403) else f"it answered with an error ({e.code})"
+    elif isinstance(e, json.JSONDecodeError): t = "something answered at its address, but not Plex (another app, or a sign-in page)"
+    else: t = str(e)[:300] or type(e).__name__
+    return t.replace(PLEX_TOKEN, "(the token)") if PLEX_TOKEN else t
+def read_plex(timeout=None):
+    """What Plex knows, or None when there is nothing safe to compare with (no address, a failed or partial read, no folder in common).
+    -> {"folders": [(folder, library title)] of the film and show libraries, longest first, "unread": the same for music, photo and other
+    libraries (their folders count as Plex's, their files are not read), "files": every file Plex has indexed, as Dedupearr sees the path}."""
+    if not PLEX_URL: PLEX_STATUS.clear(); return None
+    try:
+        secs = plex_sections(timeout); folders = []; unread = []; files = set(); skipped = []; libs = 0
+        for s in secs:
+            if s["type"] not in ("movie", "show"): skipped.append(s["title"]); unread += [(f, s["title"]) for f in s["folders"]]; continue   # music and photo libraries: not video the arrs manage
+            files |= plex_files(s, timeout); libs += 1; folders += [(f, s["title"]) for f in s["folders"]]
+        key = lambda ft: (-len(ft[0]), ft[0], ft[1]); folders.sort(key=key); unread.sort(key=key)
+        skip = f"; {len(skipped)} music, photo or other librar{'y' if len(skipped) == 1 else 'ies'} skipped ({', '.join(skipped)[:120]})" if skipped else ""
+        note = f"{libs} librar{'y' if libs == 1 else 'ies'}, {len(files):,} file{'' if len(files) == 1 else 's'} indexed{skip}"
+        if folders and not any(os.path.isdir(f) for f, _ in folders):   # a path map that is missing or wrong would call the whole library invisible
+            raise ValueError(f"it answered, but none of its library folders ({', '.join(f[:60] for f, _ in sorted(folders, key=lambda ft: ft[0])[:3])}) is a folder Dedupearr can see; if Plex sees your files under another path, set PLEX_PATH_MAP (plexpath=ourpath)")
+        PLEX_STATUS.clear(); PLEX_STATUS.update(ok=True, n=len(files), libraries=libs, note=note if folders else note + "; it has no film or show library, so nothing is compared")
+        return {"folders": folders, "unread": unread, "files": files} if folders else None
+    except Exception as e:
+        PLEX_STATUS.clear(); PLEX_STATUS.update(ok=False, n=0, libraries=0, note=plex_error(e)); note_error(f"Plex: {plex_error(e)}")
+    return None
+def plex_status():
+    if PLEX_STATUS or not PLEX_URL: return PLEX_STATUS
+    try:
+        c = db(); saved = kv_get(c, "plex_status"); c.close()
+        if saved: PLEX_STATUS.update(json.loads(saved))
+    except Exception: pass
+    return PLEX_STATUS
+
 def gather_context():
     """Ask every configured client and arr once per scan. A client that fails is reported on About and simply leaves its files unexplained."""
     clients = {}; found = read_arr_clients(); read, soft, notes = plan_clients(found, CLIENTS)
@@ -453,9 +545,9 @@ def gather_context():
         CLIENT_STATUS[name]["source"] = src
         if name in soft: CLIENT_STATUS[name]["note"] += f"; switched off in {src.capitalize()}, but still running, so its files are explained"
     DISCOVERY_NOTES[:] = notes
-    ctx = {"clients": clients, "imports": read_arr_imports(), "queue": read_arr_queue(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS), "auditarr": read_auditarr()}
+    ctx = {"clients": clients, "imports": read_arr_imports(), "queue": read_arr_queue(), **read_arr_roots(), "clients_ok": any(v["ok"] for k, v in CLIENT_STATUS.items() if k in CLIENTS), "auditarr": read_auditarr(), "plex": read_plex()}
     try:   # remembered across restarts, so the page and About stay consistent until the next scan asks again
-        c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); kv_set(c, "auditarr_status", json.dumps(AUDITARR_STATUS))
+        c = db(); kv_set(c, "client_status", json.dumps(CLIENT_STATUS)); kv_set(c, "auditarr_status", json.dumps(AUDITARR_STATUS)); kv_set(c, "plex_status", json.dumps(PLEX_STATUS))
         kv_set(c, "discovery", json.dumps({"notes": notes, "found": [{k: v for k, v in f.items() if k != "user"} for f in found]})); kv_set(c, "arr_layout", json.dumps(LAYOUT)); c.close()
     except Exception as e: log(f"could not remember the client status: {e}")
     return ctx
@@ -787,10 +879,25 @@ def judge(c, now, ctx=None):
         if ci or clients_ok: ev += "; " + client_text(ci)
         extra[r["path"]] = (ci, seeding_done(ci))
         verdicts[r["path"]] = (code, "download", r["size"], r["size"] if code in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN") else 0, twin, ev)
-    # 3. everything else
+    # 3. everything else. P2.5: with a complete answer from Plex, a library file Plex cannot show is named. Only a file that would otherwise be
+    # "Only copy" gets a Plex verdict; a real copy or a library twin keeps its verdict and gains the Plex fact as evidence. Downloads, bins and
+    # unsorted folders are never judged by Plex.
+    px = ctx.get("plex") or None
+    px_libs = ", ".join(f"{t} at {f}" for f, t in sorted(px["folders"], key=lambda ft: (ft[1], ft[0]))[:6]) + (f" and {len(px['folders']) - 6} more" if len(px["folders"]) > 6 else "") if px else ""
+    def plex_fact(r):
+        """(a Plex verdict or None, words for the evidence or '') for one library file."""
+        if not px or any(m["path"] in px["files"] for m in groups[(r["dev"], r["ino"])]): return None, ""   # Plex shows it, under this name or another name of the same file
+        inside = lambda fs: next(((f, t) for f, t in fs if f == "/" or r["path"].startswith(f + "/")), None); hit = inside(px["folders"])
+        if hit is None:
+            if (un := inside(px["unread"])): return None, f"inside {un[0]}, a folder of Plex's library {un[1]}, which is not a film or show library, so Dedupearr does not ask Plex about it"
+            return "NOT_IN_PLEX_FOLDER", f"no Plex library looks in this folder; Plex's film and show libraries are {px_libs}. If one of them is this folder under another path, set PLEX_PATH_MAP (plexpath=ourpath)"
+        if now - r["mtime"] < PLEX_GRACE_H * 3600: return None, f"inside {hit[0]}, a folder of Plex's library {hit[1]}; Plex has not indexed it yet, and it is under {PLEX_GRACE_H} hours old, so Plex may not have scanned since"
+        return "NOT_IN_PLEX", f"inside {hit[0]}, a folder of Plex's library {hit[1]}, but Plex has not indexed this file"
     for r in rows:
-        if r["path"] in verdicts: continue
-        if r["kind"] == "library": verdicts[r["path"]] = ("LIBRARY_ONLY", "library", r["size"], 0, None, f"inode {r['ino']}, link count {r['nlink']}")
+        if r["path"] in verdicts:
+            if r["kind"] == "library" and (pwords := plex_fact(r)[1]): v = verdicts[r["path"]]; verdicts[r["path"]] = v[:5] + (v[5] + "; " + pwords,)   # already something more specific: the verdict stays
+            continue
+        if r["kind"] == "library": pcode, pwords = plex_fact(r); verdicts[r["path"]] = (pcode or "LIBRARY_ONLY", "library", r["size"], 0, None, f"inode {r['ino']}, link count {r['nlink']}" + ("; " + pwords if pwords else ""))
         elif r["path"] in atrash: verdicts[r["path"]] = ("AUDITARR_BIN", "recycle", r["size"], 0, None, "inside Auditarr's trash folder; Auditarr deletes it for good after its own keep time, or puts it back")
         elif r["kind"] == "recycle":
             days = int((now - r["mtime"]) // 86400)
@@ -815,8 +922,12 @@ LABEL = {"REAL_COPY": "Real copy", "LIBRARY_ONLY": "Only copy", "LIBRARY_TWIN": 
          "DUPLICATE_COPY": "Stored twice", "DUPLICATE_HEADER": "Stored twice, header differs", "LOOKALIKE": "Looks alike", "DOWNLOAD_UNMATCHED": "Download without a match", "DOWNLOAD_OTHER_RELEASE": "Different release in library",
          "LEFTOVER": "Leftover from an upgrade", "ORPHAN": "Orphan", "SEEDING_ONLY": "Seeding only", "DOWNLOADING": "Still downloading", "AWAITING_IMPORT": "Waiting for import",
          "EXTRA": "Extra, not library",
-         "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "AUDITARR_BIN": "In Auditarr's trash", "OTHER": "Unsorted folder"}
-NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"}
+         "BIN_OLD": "Old recycle-bin file", "BIN_RECENT": "In the recycle bin", "AUDITARR_BIN": "In Auditarr's trash", "OTHER": "Unsorted folder",
+         "NOT_IN_PLEX_FOLDER": "Outside Plex's folders", "NOT_IN_PLEX": "Plex does not show it"}
+# P2.5: "Outside Plex's folders" needs you, because it is never one file: a whole folder is invisible in Plex until a person adds it to a Plex
+# library (or says, with Ignore, that it is meant to be). "Plex does not show it" does not: one unmatched name or one trailer is a note to read
+# when you wonder where a film went, not a decision, and counting each one would bury the files that do cost space. Neither is waste.
+NEEDS_YOU = {"DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER", "NOT_IN_PLEX_FOLDER"}
 def seed_sentence(ci):
     if ci is None: return "Nothing holds it, so it can go now."
     if is_usenet(ci): return "It came from usenet, so there is no seeding to wait for; it can go now."
@@ -844,6 +955,11 @@ def sentence(v):
     if code == "REAL_COPY": return "One file with two names: the library and the download folder share it, so seeding costs no extra space."
     if code == "LINKED_SEED": return f"This is the download-folder name of the library file {t}. Same file, no extra space."
     if code == "LIBRARY_ONLY": return "One copy, in the library. Nothing to do."
+    if code == "NOT_IN_PLEX_FOLDER": return "In your library, but in a folder no Plex library looks in, so Plex never shows it. Add this folder to a Plex library, or move the file into a folder Plex already has, and it appears. No space is wasted; press Ignore if this folder is meant to stay out of Plex."
+    if code == "NOT_IN_PLEX":
+        xk = extra_kind(v.get("path") or ""); xk = xk if xk.startswith(("an extra", "an opening")) else ""   # only what Plex files under its film or show
+        return ("In a folder Plex looks in, but Plex does not show this file. " + (f"The name says it is {xk}, which Plex does not list on its own, so that is expected. " if xk else "Usually Plex cannot match the name, or has not scanned since the file arrived. ")
+                + "Rename it the way Plex expects, or run a library scan in Plex; once Plex lists it, this note goes away. No space is wasted.")
     if code == "LIBRARY_TWIN": return f"Two names inside the library share one file ({t} is the other). No space wasted."
     if code == "DUPLICATE_COPY": return f"Stored twice: the library file {t} and this download are two separate files with identical content. Making them one file again would free {size}.{tail}"
     if code == "DUPLICATE_HEADER": return f"Stored twice: the library file {t} and this download are the same video, except the first part of the file differs. That usually means a tag or title was edited on one copy (Auditarr does this when it fixes audio languages). Relinking would not be safe, because the torrent would put the old header back; once seeding is done the download can go. {size} to get back.{tail}"
@@ -1288,7 +1404,7 @@ def state(c):
             if v["fix_kind"] != "remove": continue
             if why_not: v["fixable"] = False; v["fix_kind"] = ""; v["bulk"] = False; v["wait"] = why_not[0].upper() + why_not[1:]
             else: v["pack"] = {"files": len(hold), "stay": stay, "size_h": human(size)}
-    counts, bytes_by = {}, {}
+    counts, bytes_by = {}, {}; px_st = dict(plex_status())
     cats = {k: {"key": k, "label": lab, "files": 0, "needs": 0, "wasted": 0} for k, lab in CATEGORIES}
     for v in items:
         cc = cats[v["category"]]; cc["files"] += 1; cc["needs"] += 1 if v["needs_you"] else 0; cc["wasted"] += v["wasted"]
@@ -1309,9 +1425,9 @@ def state(c):
             "roots": SCAN_ROOTS, "disks": disks, "scanning": {k: SCANNING[k] for k in ("on", "phase", "files", "started")},
             "last_run": dict(last) if last else None, "counts": counts, "wasted_by": bytes_by, "wasted_by_h": {k: human(b) for k, b in bytes_by.items()},
             "library_bytes": library_bytes, "library_h": human(library_bytes), "reclaim_bytes": reclaim, "reclaim_h": human(reclaim),
-            "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": LABEL, "items": items, "log": LOG[-40:],
+            "decide_bytes": decide, "decide_h": human(decide), "now_bytes": now_bytes, "now_h": human(now_bytes), "lead": lead, "labels": {k: lab for k, lab in LABEL.items() if k not in PLEX_CODES or PLEX_URL or counts.get(k)}, "items": items, "log": LOG[-40:],
             "categories": [dict(cc, wasted_h=human(cc["wasted"])) for cc in cats.values() if cc["files"]],
-            "clients": client_status(), "auditarr": dict(auditarr_status()), "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "live_kinds": sorted(LIVE_KINDS), "fixing": dict(FIXING), "holding_dir": HOLDING_DIR, "holding": holding(c), "nightly_bot": nightly_bot()}
+            "clients": client_status(), "auditarr": dict(auditarr_status()), "plex": px_st, "seed_rule": {"ratio": SEED_MIN_RATIO, "days": SEED_MIN_DAYS, "rule": SEED_RULE}, "fix_mode": FIX_MODE, "live_kinds": sorted(LIVE_KINDS), "fixing": dict(FIXING), "holding_dir": HOLDING_DIR, "holding": holding(c), "nightly_bot": nightly_bot()}
 
 def nightly_bot():
     """The nightly page bot's last report (written by the server's user script into CONFIG_DIR/uibot.json): passed/total/failed, the bot's build and the page's build."""
@@ -1336,6 +1452,8 @@ def about(c):
     for name, st_ in sorted(client_status().items()): health.append({"level": "ok" if st_["ok"] else "warn", "text": f"{name}: {st_['note']}" if st_["ok"] else f"{name} could not be read: {st_['note']}"})
     au = auditarr_status()
     if au: health.append({"level": "ok", "text": f"Auditarr: {au['note']}; its trash is left alone."} if au["ok"] else {"level": "warn", "text": f"Auditarr could not be read: {au['note']}. Files it changed are explained less precisely until it answers."})
+    px = plex_status()
+    if px: health.append({"level": "ok", "text": f"Plex: {px['note']}."} if px["ok"] else {"level": "warn", "text": f"Plex could not be read: {px['note']}. Nothing is said about Plex until that is solved."})
     for n in discovery()["notes"]: health.append({"level": "ok", "text": n})
     if not any(c["url"] for c in CLIENTS.values()) and not any(a["url"] for a in ARRS.values()): health.append({"level": "warn", "text": "No download client or arr is connected, so downloads without a match stay undecided. Connect Sonarr or Radarr (SONARR_URL / RADARR_URL) and Dedupearr finds their download clients itself; see the README."})
     elif not client_status() and last: health.append({"level": "ok", "text": "Clients and arrs are configured; they are asked on the next scan."})
@@ -1345,8 +1463,8 @@ def about(c):
     return {"app": APP, "tagline": TAGLINE, "version": VERSION, "revision": REVISION, "phase": PHASE, "health": health,
             "settings": {"SCAN_ROOTS": SCAN_ROOTS, "LIBRARY_DIRS": LIBRARY_DIRS, "DOWNLOAD_DIRS": DOWNLOAD_DIRS, "RECYCLE_DIRS": RECYCLE_DIRS,
                          "RECYCLE_DAYS": RECYCLE_DAYS, "MIN_SIZE_MB": MIN_SIZE_MB, "HASH_BUDGET_MB": HASH_BUDGET_MB, "SCAN_TIME": SCAN_TIME,
-                         "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "SEED_RULE": SEED_RULE, "CLIENT_PATH_MAP": CLIENT_PATH_MAP, "FIX_MODE": FIX_MODE, "HOLDING_DIR": HOLDING_DIR, "HOLD_DAYS": HOLD_DAYS,
-                         "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}, "Auditarr": AUDITARR_URL or "not set"}},
+                         "SEED_MIN_RATIO": SEED_MIN_RATIO, "SEED_MIN_DAYS": SEED_MIN_DAYS, "SEED_RULE": SEED_RULE, "CLIENT_PATH_MAP": CLIENT_PATH_MAP, "PLEX_PATH_MAP": PLEX_PATH_MAP, "FIX_MODE": FIX_MODE, "HOLDING_DIR": HOLDING_DIR, "HOLD_DAYS": HOLD_DAYS,
+                         "connections": {**{a: (c["url"] or "not set") for a, c in ARRS.items()}, **{n: (c["url"] or "not set") for n, c in CLIENTS.items()}, "Auditarr": AUDITARR_URL or "not set", "Plex": PLEX_URL or "not set"}},
             "runs": [dict(r) for r in c.execute("SELECT * FROM run ORDER BY id DESC LIMIT 30")], "log": LOG[-60:], "errors": errors_recent()[-30:],
             "links": {"source": "https://github.com/chrizantoz/dedupearr", "auditarr": "https://github.com/chrizantoz/auditarr"}}
 
@@ -1384,7 +1502,7 @@ def digest(c, now=None, hours=26):
         lines.append(f"Holding bin: {_files(len(h['items']))}, {h['bytes_h']}" + (f"; {soon} will be deleted for good within a day" if soon else ""))
     if last and last["note"] != "ok": trouble.append("the last scan failed")
     elif last and now - last["finished"] > 2 * 86400: trouble.append("the last scan is more than two days old")
-    trouble += [f"{name} could not be read" for name, st_ in sorted(s["clients"].items()) if not st_["ok"]] + (["Auditarr could not be read"] if s["auditarr"] and not s["auditarr"]["ok"] else [])
+    trouble += [f"{name} could not be read" for name, st_ in sorted(s["clients"].items()) if not st_["ok"]] + (["Auditarr could not be read"] if s["auditarr"] and not s["auditarr"]["ok"] else []) + (["Plex could not be read"] if s["plex"] and not s["plex"].get("ok") else [])
     errs = errors_recent()
     if errs: trouble.append(f"{len(errs)} error{'s' if len(errs) != 1 else ''} in the last 24 hours")
     lines.append("Trouble: " + "; ".join(trouble) if trouble else "No errors since yesterday")
@@ -1521,9 +1639,9 @@ SETTABLE = {   # name -> (group, kind, default, label, hint)
 }
 CONN_GROUPS = {"Sonarr": ["SONARR_URL", "SONARR_APIKEY"], "Radarr": ["RADARR_URL", "RADARR_APIKEY"], "Whisparr": ["WHISPARR_URL", "WHISPARR_APIKEY"], "Sportarr": ["SPORTARR_URL", "SPORTARR_APIKEY"],
                "Lidarr": ["LIDARR_URL", "LIDARR_APIKEY"], "Deluge": ["DELUGE_URL", "DELUGE_PASSWORD"], "NZBGet": ["NZBGET_URL", "NZBGET_USER", "NZBGET_PASSWORD"], "qBittorrent": ["QBIT_URL", "QBIT_USER", "QBIT_PASSWORD"],
-               "rTorrent": ["RTORRENT_URL", "RTORRENT_USER", "RTORRENT_PASSWORD"], "Transmission": ["TRANSMISSION_URL", "TRANSMISSION_USER", "TRANSMISSION_PASSWORD"], "SABnzbd": ["SABNZBD_URL", "SABNZBD_APIKEY"], "Auditarr": ["AUDITARR_URL"]}
+               "rTorrent": ["RTORRENT_URL", "RTORRENT_USER", "RTORRENT_PASSWORD"], "Transmission": ["TRANSMISSION_URL", "TRANSMISSION_USER", "TRANSMISSION_PASSWORD"], "SABnzbd": ["SABNZBD_URL", "SABNZBD_APIKEY"], "Auditarr": ["AUDITARR_URL"], "Plex": ["PLEX_URL", "PLEX_TOKEN"]}
 for _g, _names in CONN_GROUPS.items():
-    for _n in _names: SETTABLE[_n] = ("conn:" + _g, "url" if _n.endswith("_URL") else "user" if _n.endswith("_USER") else "secret", "", {"url": "Address", "user": "User"}.get(_n.rsplit("_", 1)[1].lower(), "API key" if _n.endswith("APIKEY") else "Password"), "")
+    for _n in _names: SETTABLE[_n] = ("conn:" + _g, "url" if _n.endswith("_URL") else "user" if _n.endswith("_USER") else "secret", "", {"url": "Address", "user": "User", "token": "Token"}.get(_n.rsplit("_", 1)[1].lower(), "API key" if _n.endswith("APIKEY") else "Password"), "")
 SETTINGS = {}   # what the page saved
 def _envset(name): return bool(os.environ.get(name, "").strip())
 def group_locked(name):
@@ -1584,7 +1702,7 @@ def refresh_globals():
         src = setting(names[0])[1]
         if CLIENTS[kind]["url"]: CLIENT_SOURCE[kind] = "container" if src == "container" else "page"
         else: CLIENT_SOURCE.pop(kind, None)
-    g["AUDITARR_URL"] = val("AUDITARR_URL").rstrip("/")
+    g["AUDITARR_URL"] = val("AUDITARR_URL").rstrip("/"); g["PLEX_URL"] = val("PLEX_URL").rstrip("/"); g["PLEX_TOKEN"] = val("PLEX_TOKEN")
 def load_settings(c=None):
     own = c is None; c = c or db()
     try: raw = kv_get(c, "settings"); SETTINGS.clear(); SETTINGS.update({k: v for k, v in (json.loads(raw) if raw else {}).items() if k in SETTABLE})
@@ -1647,6 +1765,12 @@ def test_connection(name):
             j = http_json(AUDITARR_URL + "/api/changed", timeout=15)
             if not isinstance(j, dict) or not isinstance(j.get("files"), list): return False, "Something answered at Auditarr's address, but not Auditarr's list of changed files (an older Auditarr, or a sign-in page)."
             return True, f"Auditarr answered: it lists {len(j['files'])} files it changed."
+        if name == "Plex":
+            if not PLEX_URL: return False, "Plex has no address yet. Type it above and press Save first."
+            try: secs = plex_sections(15)
+            except urllib.error.HTTPError: raise
+            except ValueError as e: return False, f"Plex did not give its libraries: {plex_error(e)}."
+            return True, f"Plex answered: {len(secs)} librar{'y' if len(secs) == 1 else 'ies'}" + (f" ({', '.join(s['title'] for s in secs)[:120]})" if secs else "") + "."
         if name in READERS:
             cfg = CLIENTS[name] if CLIENTS[name]["url"] else ACTIVE.get(name)
             if not cfg or not cfg.get("url"): return False, f"{name} has no address yet, and none of your arrs lists it. Type it above and press Save first."
@@ -1657,8 +1781,8 @@ def test_connection(name):
                 else: CLIENT_STATUS.pop(name, None)
             return True, f"{name} answered: it knows {n} {'jobs' if name in USENET else 'torrents'} ({len(got)} files and folders)."
         return False, "Dedupearr does not know that app."
-    except urllib.error.HTTPError as e: return False, f"{name} answered with an error ({e.code}{': the key or password was refused' if e.code in (401, 403) else ''})."
-    except Exception as e: return False, f"{name} did not answer: {str(e)[:160]}."
+    except urllib.error.HTTPError as e: return False, f"{name} answered with an error ({e.code}{': the key, token or password was refused' if e.code in (401, 403) else ''})."
+    except Exception as e: return False, f"{name} did not answer: {(str(e).replace(PLEX_TOKEN, '(the token)') if PLEX_TOKEN else str(e))[:160]}."
 
 def _mounts():
     """The mounts this container sees (/proc/self/mountinfo): mount point, the folder of its source it shows, filesystem."""
@@ -1717,8 +1841,8 @@ def setup_view(c):
     for g, names in CONN_GROUPS.items():
         u, src = setting(names[0])
         if g in CLIENTS and not u and ACTIVE.get(g, {}).get("url"): u, src = ACTIVE[g]["url"], "arr"
-        known = st.get(g) or st.get(g.capitalize()) or {}
-        conns.append({"name": g, "kind": "arr" if g.lower() in ARRS else "auditarr" if g == "Auditarr" else "usenet" if g in USENET else "torrent", "fields": names, "url": u, "source": src, "locked": group_locked(names[0]),
+        known = plex_status() if g == "Plex" else st.get(g) or st.get(g.capitalize()) or {}
+        conns.append({"name": g, "kind": "arr" if g.lower() in ARRS else "auditarr" if g == "Auditarr" else "plex" if g == "Plex" else "usenet" if g in USENET else "torrent", "fields": names, "url": u, "source": src, "locked": group_locked(names[0]),
                       "status": ("ok" if known.get("ok") else "warn") if known else "", "note": str(known.get("note") or "")[:200]})
     return {"mount": mount_test(c), "discovered": discovery(), "connections": conns}
 

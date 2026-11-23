@@ -64,9 +64,13 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   for (const f of filters) {
     $(`#chips button[data-filter=${f}]`).click(); await sleep(20);
     const shown = $$("#rows tr[id^=r-]").length;
-    const want = f === "all" ? items.length : f === "needs" ? needs : f === "fine" ? items.filter(i => !i.needs_you && !i.ignored).length : f === "dups" ? items.filter(i => i.code === "DUPLICATE_COPY" || i.code === "DUPLICATE_HEADER").length : f === "nomatch" ? items.filter(i => ["DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN"].includes(i.code)).length : items.filter(i => i.code === f).length;
+    const want = f === "all" ? items.length : f === "needs" ? needs : f === "fine" ? items.filter(i => !i.needs_you && !i.ignored).length : f === "dups" ? items.filter(i => i.code === "DUPLICATE_COPY" || i.code === "DUPLICATE_HEADER").length : f === "plex" ? items.filter(i => i.code === "NOT_IN_PLEX_FOLDER" || i.code === "NOT_IN_PLEX").length : f === "nomatch" ? items.filter(i => ["DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN"].includes(i.code)).length : items.filter(i => i.code === f).length;
     check(`filter '${f}' shows ${want} rows`, shown === Math.min(want, 500), shown);
   }
+  // P2.5: the Not in Plex chip is there only with Plex connected, and counts the files Plex does not show
+  const notInPlex = items.filter(i => i.code === "NOT_IN_PLEX_FOLDER" || i.code === "NOT_IN_PLEX"), plexOn = Object.keys(data.state.plex || {}).length > 0 || notInPlex.length > 0, plexChip = $("#chips button[data-filter=plex]");
+  check("the Not in Plex chip shows only with Plex connected, and counts the files Plex does not show", plexOn ? !!plexChip && plexChip.textContent.trim().endsWith("· " + notInPlex.length) : !plexChip, plexChip ? plexChip.textContent : "no chip");
+  check("a file Plex does not show never has a fix button, and one outside Plex's folders offers Ignore", notInPlex.every(i => !i.fixable && (i.code !== "NOT_IN_PLEX_FOLDER" || i.needs_you || i.ignored)), notInPlex.length);
   // kinds of media (2026-11-12): one button per kind present; each shows exactly that kind; counts follow the filter
   const cats = data.state.categories || [];
   check("one kind button per kind present, plus All kinds (hidden when there is only one kind)", cats.length < 2 ? $("#kinds").hidden : $$("#kinds button[data-kind]").length === cats.length + 1, $$("#kinds button").length);

@@ -18,6 +18,11 @@ for n in range(N):
     except Exception as e:
         crashed += 1; print(f"FAIL round {n}: scan crashed on a wounded answer: {e!r}"); srv.shutdown(); srv.server_close(); continue
     c = d.db(); S = d.state(c); c.close(); srv.shutdown(); srv.server_close()
+    px = [i for i in S["items"] if i["code"] in d.PLEX_CODES]   # P2.5: a wounded Plex answer never crashes the scan, and a Plex that was not read in full says nothing
+    if px and not d.PLEX_STATUS.get("ok"): bad += 1; print(f"FAIL round {n}: {len(px)} Plex verdict(s) although Plex was not read in full: {d.PLEX_STATUS.get('note')}")
+    if any(i["kind"] != "library" or i["wasted"] or i["fixable"] for i in px): bad += 1; print(f"FAIL round {n}: a Plex verdict on something that is not a library file, or counted as waste, or with a fix")
+    if world["plex"]["token"] in str(d.LOG) + str(d.ERRORS) + str(S["plex"]): bad += 1; print(f"FAIL round {n}: Plex's secret reached a log line or the page")
+    plex_rounds = globals().get("plex_rounds", [0, 0]); plex_rounds[0 if d.PLEX_STATUS.get("ok") else 1] += 1
     if r is None or S["last_run"]["note"] != "ok": bad += 1; print(f"FAIL round {n}: scan did not end ok: {S['last_run']}")
     for i in S["items"]:
         if i["code"] not in d.LABEL: bad += 1; print(f"FAIL round {n}: unknown code {i['code']}")
@@ -25,4 +30,5 @@ for n in range(N):
         if not i["plain"].endswith(".") or "None" in i["plain"] or "nan" in i["plain"].lower(): bad += 1; print(f"FAIL round {n}: sentence broke: {i['plain'][-80:]!r}")
         if i["client_text"] and ("None" in i["client_text"] or "nan" in i["client_text"]): bad += 1; print(f"FAIL round {n}: client line broke: {i['client_text']!r}")
     if S["now_bytes"] > S["reclaim_bytes"] + S["decide_bytes"]: bad += 1; print(f"FAIL round {n}: 'can go now' exceeds the waste")
+print(f"Plex was read in full in {globals().get('plex_rounds', [0, 0])[0]} rounds and refused as incomplete in {globals().get('plex_rounds', [0, 0])[1]}")
 print(f"\n{N} rounds of wounded client answers, {crashed} crash(es), {bad} broken rule(s)"); sys.exit(1 if bad or crashed else 0)

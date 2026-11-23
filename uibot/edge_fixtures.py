@@ -28,7 +28,7 @@ write("tidy", e)
 # 2. empty: a fresh install whose first scan found no video files at all
 e = copy.deepcopy(base); s = e["state"]
 s.update(items=[], counts={}, wasted_by={}, wasted_by_h={}, reclaim_bytes=0, reclaim_h="0 B", decide_bytes=0, decide_h="0 B", library_bytes=0, library_h="0 B", lead="Your library is 0 B. 0 B is wasted on second copies and old recycle-bin files.")
-s["last_run"] = dict(s["last_run"], files=0, bytes=0, wasted=0)
+s["last_run"] = dict(s["last_run"], files=0, bytes=0, wasted=0); s.pop("plex", None)   # and no Plex connected: the Not in Plex chip must be gone
 write("empty", e)
 
 # 3. huge: 3,000 files that need a decision, long names, every verdict
@@ -38,8 +38,9 @@ for n in range(3000):
     src = rnd.choice(base["state"]["items"]); i = copy.deepcopy(src)
     i["path"] = f"/data/torrents/tv/Show {n:04d}/Some.Very.Long.Release.Name.S{n % 40:02d}E{n % 24:02d}.2160p.WEB-DL.DDP5.1.Atmos.H.265-GROUP{n}.mkv"
     i["title"] = f"Some Very Long Release Name {n} S{n % 40:02d}E{n % 24:02d}"; i["code"] = codes[n % len(codes)]; i["label"] = s["labels"][i["code"]]
-    i["needs_you"] = i["code"] in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER"); i["ignored"] = False
-    i["size"] = rnd.randint(500_000_000, 60_000_000_000); i["wasted"] = i["size"] if i["needs_you"] else 0; i["size_h"] = f"{i['size'] / 1e9:.1f} GB"; i["wasted_h"] = f"{i['wasted'] / 1e9:.1f} GB" if i["wasted"] else "0 B"
+    i["needs_you"] = i["code"] in ("DUPLICATE_COPY", "DUPLICATE_HEADER", "DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LEFTOVER", "ORPHAN", "BIN_OLD", "OTHER", "NOT_IN_PLEX_FOLDER"); i["ignored"] = False
+    i["size"] = rnd.randint(500_000_000, 60_000_000_000); i["wasted"] = i["size"] if i["needs_you"] and i["code"] != "NOT_IN_PLEX_FOLDER" else 0; i["size_h"] = f"{i['size'] / 1e9:.1f} GB"; i["wasted_h"] = f"{i['wasted'] / 1e9:.1f} GB" if i["wasted"] else "0 B"
+    if i["code"] in ("NOT_IN_PLEX_FOLDER", "NOT_IN_PLEX"): i.update(fixable=False, fix_kind="", bulk=False, removable=False, wait="", pack=None)   # the app never offers a fix for these
     items.append(i)
 s["items"] = items; s["counts"] = {}; s["wasted_by"] = {}
 for i in items: s["counts"][i["code"]] = s["counts"].get(i["code"], 0) + 1; s["wasted_by"][i["code"]] = s["wasted_by"].get(i["code"], 0) + i["wasted"]

@@ -8,7 +8,7 @@ TMP = tempfile.mkdtemp(prefix="dedupearr-settings-"); DATA = os.path.join(TMP, "
 import fake_disk, mock_clients  # noqa: E402
 s = socket.socket(); s.bind(("127.0.0.1", 0)); mport = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{mport}"
 now = time.time(); P = fake_disk.build(DATA, now); P.update(mock_clients.extra_files(DATA, fake_disk.blob)); world = mock_clients.world_for(P, DATA); msrv = mock_clients.start(world, mport)
-env = mock_clients.env_for(M); env.pop("RADARR_URL"); env.pop("RADARR_APIKEY")   # Radarr is typed on the Setup tab in this test
+env = mock_clients.env_for(M); env.pop("RADARR_URL"); env.pop("RADARR_APIKEY"); env.pop("PLEX_URL"); PLEX_SECRET = env.pop("PLEX_TOKEN")   # Radarr and Plex are typed on the Setup tab in this test
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100", CLIENT_TIMEOUT="5", **env)
 import dedupearr as d  # noqa: E402
 results = []
@@ -62,6 +62,24 @@ st, j = call("/api/settings", {"set": {"RADARR_APIKEY": ""}}); check("an empty p
 call("/api/settings", {"set": {"RADARR_APIKEY": "test"}})
 st, j = call("/api/settings", {"set": {"RTORRENT_URL": "http://127.0.0.1:9/RPC2"}}); check("a client address saved on the page wins over the one an arr lists, and says it came from the page", d.CLIENTS["rTorrent"]["url"].endswith(":9/RPC2") and d.CLIENT_SOURCE["rTorrent"] == "page", d.CLIENT_SOURCE)
 call("/api/settings", {"reset": ["RTORRENT_URL"]}); check("Use the default hands it back to the arr's list", "rTorrent" not in d.CLIENT_SOURCE)
+# Plex (P2.5): typed on the Setup tab like an arr; its token is a secret like their keys
+items = {i["name"]: i for i in call("/api/settings")[1]["items"]}
+check("Plex is on the Setup tab with an address and a token, and the token is a password box", items["PLEX_URL"]["group"] == items["PLEX_TOKEN"]["group"] == "conn:Plex" and items["PLEX_TOKEN"]["kind"] == "secret" and items["PLEX_TOKEN"]["label"] == "Token" and not items["PLEX_URL"]["locked"], "the Plex rows of the Settings answer are not an address and a secret")
+check("before Plex has an address, no file carries a Plex verdict and Setup shows no Plex status", not any(i["code"] in d.PLEX_CODES for i in by().values()) and next(k for k in call("/api/setup")[1]["connections"] if k["name"] == "Plex")["status"] == "")
+st, j = call("/api/settings", {"set": {"PLEX_URL": f"{M}/plex/", "PLEX_TOKEN": PLEX_SECRET}})
+check("Plex typed on the Setup tab is used: its address and its token", st == 200 and d.PLEX_URL == f"{M}/plex" and d.PLEX_TOKEN == PLEX_SECRET, (st, "what was saved for Plex is not what was typed"))
+st, j = call("/api/setup/test", {"name": "Plex"}); check("Test asks Plex with what is saved and answers in a sentence", st == 200 and j["ok"] and j["note"] == "Plex answered: 3 libraries (Films, Music, Shows).", j)
+sent = json.dumps([call("/api/settings")[1], call("/api/setup")[1], call("/api/state")[1], call("/api/about")[1], call("/api/actions")[1]]); items = {i["name"]: i for i in call("/api/settings")[1]["items"]}
+check("Plex's token never comes back to the page: not in the settings, setup, state, About or actions answers; only that one is saved", PLEX_SECRET not in sent and items["PLEX_TOKEN"]["value"] == "" and items["PLEX_TOKEN"]["saved"] is True, "the Plex secret was found in an answer, or was not marked as saved")
+check("the change is in the actions log by name", any(a["kind"] == "settings" and "PLEX_TOKEN" in a["result"] and "PLEX_URL" in a["result"] for a in d.actions(c)))
+d.scan(now=now + 4); rows = by(); px = next(k for k in call("/api/setup")[1]["connections"] if k["name"] == "Plex")
+check("the next scan asks Plex: the library folder Plex does not look in is named, and Setup shows that Plex answered", rows[P["px_outside"]]["code"] == "NOT_IN_PLEX_FOLDER" and rows[P["px_unindexed"]]["code"] == "NOT_IN_PLEX" and px["status"] == "ok" and px["kind"] == "plex" and px["source"] == "page", (rows[P["px_outside"]]["code"], px["status"]))
+st, j = call("/api/settings", {"set": {"PLEX_URL": "http://127.0.0.1:9/elsewhere"}}); items = {i["name"]: i for i in call("/api/settings")[1]["items"]}
+check("a new Plex address forgets the saved token, so the token is never sent to an address it was not typed for", st == 200 and items["PLEX_TOKEN"]["saved"] is False and d.PLEX_TOKEN == "", "the Plex secret was still marked saved, or still in memory, after the address changed")
+os.environ["PLEX_URL"] = f"{M}/plex"; st, j = call("/api/settings", {"set": {"PLEX_TOKEN": "typed-on-the-page"}}); items = {i["name"]: i for i in call("/api/settings")[1]["items"]}
+check("with Plex's address set on the container, the page changes neither the address nor the token", st == 409 and "container" in j["error"] and items["PLEX_URL"]["locked"] and items["PLEX_TOKEN"]["locked"], (st, "the Plex rows were not locked"))
+os.environ.pop("PLEX_URL"); call("/api/settings", {"reset": ["PLEX_URL", "PLEX_TOKEN"]}); d.scan(now=now + 5)
+check("Use the default takes Plex away again: the next scan has no Plex verdicts", d.PLEX_URL == "" and not any(i["code"] in d.PLEX_CODES for i in by().values()) and d.PLEX_STATUS == {})
 st, j = call("/api/setup/test", {"name": "Nonsense"}); check("an unknown app is answered in words", not j["ok"] and "does not know" in j["note"])
 # who may write: without a sign-in only a direct browser on your own network; through a proxy nobody; the demo never
 st, j = call("/api/settings", {"set": {"RECYCLE_DAYS": "7"}}, {"X-Forwarded-For": "203.0.113.9"})

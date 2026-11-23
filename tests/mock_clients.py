@@ -1,10 +1,11 @@
-"""A fake Deluge, NZBGet, qBittorrent, rTorrent, Transmission, SABnzbd, Sonarr and Radarr in one small HTTP server, answering in the shapes the real
+"""A fake Deluge, NZBGet, qBittorrent, rTorrent, Transmission, SABnzbd, Sonarr, Radarr and Plex in one small HTTP server, answering in the shapes the real
 ones use (Deluge/NZBGet/qBittorrent/arrs recorded from a real server on 2026-11-12; rTorrent 0.16 XML-RPC, Transmission 4.1 RPC, SABnzbd 5.1 API and
-the arrs' Download Clients list recorded 2026-11-18). start(world, port) -> server; world = {"deluge": [torrents], "nzbget": [history], "qbit": [torrents],
+the arrs' Download Clients list recorded 2026-11-18; Plex's library list and paged item list written 2026-11-22 from its documented JSON shapes,
+not recorded from a real server). start(world, port) -> server; world = {"deluge": [torrents], "nzbget": [history], "qbit": [torrents],
 "rtorrent": [...], "transmission": [...], "sab": [history], "arr": {app: [history records]}, "downloadclients": {app: [entries]}}.
 A download-client entry whose host is "@mock" points at this server, so discovery from the arrs finds the fake clients.
 Each torrent: {"id", "name", "save_path", "files": [relative paths], "state", "ratio", "seeding_time", "label", "finished"}."""
-import json, threading, urllib.parse, xmlrpc.client
+import json, re, threading, time, urllib.parse, xmlrpc.client
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 import os, random
@@ -25,7 +26,13 @@ def extra_files(DATA, blob):
             "tr_pack1": blob(f"{DATA}/torrents/anime/Pack.Anime.S01/Pack.Anime.S01E01.1080p.mkv", 10, "tr-pack-1"),   # a private two-file torrent seeding in Transmission
             "tr_pack2": blob(f"{DATA}/torrents/anime/Pack.Anime.S01/Pack.Anime.S01E02.1080p.mkv", 11, "tr-pack-2"),
             "sab_done": blob(f"{DATA}/usenet/complete/Sab.Film.2024.1080p.WEB/Sab.Film.2024.1080p.WEB.mkv", 12, "sab-done"),   # SABnzbd finished it, Radarr imported it, the library moved on
-            "sab_failed": blob(f"{DATA}/usenet/incomplete/Sab.Broken.2023.2160p/Sab.Broken.2023.2160p.mkv", 13, "sab-failed")}   # a failed SABnzbd job nobody imported
+            "sab_failed": blob(f"{DATA}/usenet/incomplete/Sab.Broken.2023.2160p/Sab.Broken.2023.2160p.mkv", 13, "sab-failed"),   # a failed SABnzbd job nobody imported
+            # P2.5 (2026-11-22): library files the fake Plex does not show. Sizes nothing else has, so no download becomes their lookalike
+            "px_outside": blob(f"{DATA}/media/kids/Small Film (2020)/Small Film (2020).mkv", 14, "px-outside", time.time() - 9 * 86400),   # a library folder no Plex library looks in
+            "px_unindexed": blob(f"{DATA}/media/movies/Odd Name Film/odd_name_film_final_v2.mkv", 15, "px-unindexed", time.time() - 3 * 86400),   # inside Plex's film folder, three days old, not indexed
+            "px_fresh": blob(f"{DATA}/media/tv/New Show/Season 01/New.Show.S01E01.1080p.mkv", 16, "px-fresh", time.time() - 3600),   # inside Plex's show folder, an hour old, not indexed yet: the day of grace
+            "px_trailer": blob(f"{DATA}/media/movies/Heat (1995)/Trailers/Heat.1995.Trailer.mkv", 17, "px-trailer", time.time() - 30 * 86400),   # an extra Plex files under its film, not on its own
+            "px_music": blob(f"{DATA}/media/music/Some Band/Some.Band.Live.2019.mkv", 18, "px-music", time.time() - 30 * 86400)}   # a concert film inside Plex's music library, which is not read
 
 def world_for(P, DATA):
     """What the fake clients and arrs know about the fake disk (P = paths from fake_disk.build + extra_files)."""
@@ -58,6 +65,12 @@ def world_for(P, DATA):
                            {"eventType": "downloadFolderImported", "date": "2026-11-01T03:00:00Z", "sourceTitle": "Show.S01E01.1080p.WEB", "data": {"droppedPath": P["usenet"], "importedPath": f"{DATA}/media/tv/Show/Season 01/Show - S01E01.mkv"}},
                            {"eventType": "downloadFolderImported", "date": "2026-10-20T03:00:00Z", "sourceTitle": "Gone.Show.S02E03.1080p.WEB", "data": {"droppedPath": P["rt_left"], "importedPath": f"{DATA}/media/tv/Gone Show/Season 02/Gone Show - S02E03.mkv"}}],
                 "radarr": [{"eventType": "downloadFolderImported", "date": "2026-10-25T03:00:00Z", "sourceTitle": "Sab.Film.2024.1080p.WEB", "data": {"droppedPath": P["sab_done"], "importedPath": f"{DATA}/media/movies/Sab Film (2024)/Sab Film (2024).mkv"}}]},
+        # P2.5: the fake Plex. Three libraries (films, shows over two folders, music); every library file of the fake disk is indexed except the planted
+        # px_* ones and the second name of the library twin. Each item: {"title", "media": [[part files of one version], ...]}
+        "plex": {"token": "plex-test-token", "sections": [
+            {"key": "1", "type": "movie", "title": "Films", "locations": [f"{DATA}/media/movies"], "items": [{"title": os.path.basename(os.path.dirname(P[k])), "media": [[P[k]]]} for k in ("real_lib", "dup_lib", "other_lib", "twin_a")]},
+            {"key": "2", "type": "show", "title": "Shows", "locations": [f"{DATA}/media/tv", f"{DATA}/media/anime"], "items": [{"title": os.path.basename(P[k]), "media": [[P[k]]]} for k in ("hdr_lib", "look_lib", "lib_only")]},
+            {"key": "3", "type": "artist", "title": "Music", "locations": [f"{DATA}/media/music"], "items": []}]},
         # each arr's library folders, and Sonarr's anime flag per series (what a real Sonarr returns, trimmed to the fields used)
         "roots": {"sonarr": [f"{DATA}/media/tv", f"{DATA}/media/anime"], "radarr": [f"{DATA}/media/movies"]},
         "series": [{"id": 1, "title": "Frieren", "seriesType": "anime", "path": f"{DATA}/media/anime/Frieren"},
@@ -74,8 +87,9 @@ def _dc(impl, enable, priority, base, port=None, host="@mock"):
 
 def env_for(M):
     """The environment that points Dedupearr at a mock listening at M. rTorrent, Transmission and SABnzbd have no address here on purpose:
-    Dedupearr finds them on Sonarr's Download Clients page (P2.0). Only SABnzbd's API key is set, because the arrs never share it."""
-    return dict(DELUGE_URL=f"{M}/deluge", DELUGE_PASSWORD="test", NZBGET_URL=f"{M}/nzbget", NZBGET_USER="test", NZBGET_PASSWORD="test", QBIT_URL=f"{M}/qbit", QBIT_USER="test", QBIT_PASSWORD="test",
+    Dedupearr finds them on Sonarr's Download Clients page (P2.0). Only SABnzbd's API key is set, because the arrs never share it.
+    Plex (P2.5) is set like an arr: its address and its token."""
+    return dict(PLEX_URL=f"{M}/plex", PLEX_TOKEN="plex-test-token", DELUGE_URL=f"{M}/deluge", DELUGE_PASSWORD="test", NZBGET_URL=f"{M}/nzbget", NZBGET_USER="test", NZBGET_PASSWORD="test", QBIT_URL=f"{M}/qbit", QBIT_USER="test", QBIT_PASSWORD="test",
                 SABNZBD_APIKEY="test", SONARR_URL=f"{M}/sonarr", SONARR_APIKEY="test", RADARR_URL=f"{M}/radarr", RADARR_APIKEY="test")
 
 def _mangle(obj, rnd, depth=0):
@@ -95,6 +109,42 @@ def _mangle(obj, rnd, depth=0):
         elif op == "wrong": obj[i] = rnd.choice([None, 3, "x", {}])
         elif depth < 4: _mangle(obj[i], rnd, depth + 1)
     return obj
+
+def _plex(h, world, u, q):
+    """Plex Media Server's two read calls, in its JSON shapes: GET /library/sections (MediaContainer.Directory[] with key, type, title, Location[].path)
+    and GET /library/sections/<key>/all?type=1|4 (MediaContainer.Metadata[].Media[].Part[].file), paged by the X-Plex-Container-Start and
+    X-Plex-Container-Size headers (then with totalSize and offset). The token must come in the X-Plex-Token header: 401 otherwise, and a token in
+    the address is recorded as a fault. Without Accept: application/json Plex answers XML, and so does this.
+    Knobs in world["plex"]: "prefix": (as Plex sees it, as the disk has it); "fail": {"key", "start", "how": "error" | "short"}: from that item on,
+    that library's pages fail or come back empty."""
+    px = world.get("plex") or {}; tok = px.get("token", "plex-test-token"); world["_plex_calls"] = world.get("_plex_calls", 0) + 1
+    if "x-plex-token" in u.query.lower() or tok in h.path: world["_plex_token_in_url"] = True
+    if h.headers.get("X-Plex-Token") != tok: return h._send(None, 401, b"<html><head><title>Unauthorized</title></head><body><h1>401 Unauthorized</h1></body></html>")
+    if "application/json" not in (h.headers.get("Accept") or ""): return h._send(None, 200, b'<?xml version="1.0" encoding="UTF-8"?>\n<MediaContainer size="0"></MediaContainer>')
+    seen = lambda p: px["prefix"][0] + p[len(px["prefix"][1]):] if px.get("prefix") and p.startswith(px["prefix"][1]) else p; secs = px.get("sections", [])
+    if u.path == "/plex/library/sections":
+        return h._send({"MediaContainer": {"size": len(secs), "allowSync": False, "title1": "Plex Library", "Directory": [
+            {"allowSync": True, "art": "/:/resources/movie-fanart.jpg", "composite": f"/library/sections/{s['key']}/composite/1795000000", "filters": True, "refreshing": False, "thumb": "/:/resources/movie.png", "key": s["key"], "type": s["type"],
+             "title": s["title"], "agent": {"movie": "tv.plex.agents.movie", "show": "tv.plex.agents.series", "artist": "tv.plex.agents.music"}.get(s["type"], "com.plexapp.agents.none"), "scanner": "Plex Movie" if s["type"] == "movie" else "Plex TV Series" if s["type"] == "show" else "Plex Music",
+             "language": "en-US", "uuid": f"0f0e0d0c-0000-4000-8000-00000000000{n}", "updatedAt": 1795000000, "createdAt": 1790000000, "scannedAt": 1795000000, "content": True, "directory": True, "contentChangedAt": 4242, "hidden": 0,
+             "Location": [{"id": 10 * n + k, "path": seen(loc)} for k, loc in enumerate(s["locations"], 1)]} for n, s in enumerate(secs, 1)]}})
+    m = re.fullmatch(r"/plex/library/sections/([^/]+)/all", u.path); sec = next((s for s in secs if m and s["key"] == m.group(1)), None)
+    if sec is None: return h._send(None, 404, b"<html><head><title>Not Found</title></head><body><h1>404 Not Found</h1></body></html>")
+    world["_plex_asked"] = sorted(set(world.get("_plex_asked", [])) | {sec["key"]})
+    items = sec.get("items", []) if q.get("type", [""])[0] == {"movie": "1", "show": "4"}.get(sec["type"]) else []
+    paged = h.headers.get("X-Plex-Container-Size") is not None; start = int(h.headers.get("X-Plex-Container-Start") or 0); size = int(h.headers.get("X-Plex-Container-Size") or len(items) or 1)
+    page = items[start:start + size]; fail = px.get("fail") or {}
+    if fail.get("key") == sec["key"] and start >= fail.get("start", 0):
+        if fail.get("how") == "error": return h._send(None, 500, b"<html><head><title>Internal Server Error</title></head><body><h1>500 Internal Server Error</h1></body></html>")
+        page = []
+    kind = "movie" if sec["type"] == "movie" else "episode"
+    mc = {"size": len(page), **({"totalSize": len(items), "offset": start} if paged else {}), "allowSync": True, "art": "/:/resources/movie-fanart.jpg", "identifier": "com.plexapp.plugins.library", "librarySectionID": int(sec["key"]) if sec["key"].isdigit() else 0,
+          "librarySectionTitle": sec["title"], "librarySectionUUID": "0f0e0d0c-0000-4000-8000-000000000001", "mediaTagPrefix": "/system/bundle/media/flags/", "mediaTagVersion": 1795000000, "thumb": "/:/resources/movie.png", "title1": sec["title"], "title2": "All", "viewGroup": kind, "viewMode": 65592}
+    if page: mc["Metadata"] = [{"ratingKey": str(1000 + start + n), "key": f"/library/metadata/{1000 + start + n}", "guid": f"plex://{kind}/5d77{start + n:020d}", "type": kind, "title": it["title"], "librarySectionTitle": sec["title"], "librarySectionID": mc["librarySectionID"],
+                                "addedAt": 1795000000, "updatedAt": 1795000000, **({"grandparentTitle": it["title"].split(".S0")[0], "parentIndex": 1, "index": start + n + 1} if kind == "episode" else {"year": 2020}),
+                                "Media": [{"id": 2000 + 10 * (start + n) + v, "duration": 5400000, "bitrate": 8000, "width": 1920, "height": 1080, "aspectRatio": 1.78, "audioChannels": 6, "audioCodec": "eac3", "videoCodec": "h264", "videoResolution": "1080", "container": "mkv", "videoFrameRate": "24p",
+                                           "Part": [{"id": 3000 + 100 * (start + n) + 10 * v + k, "key": f"/library/parts/{3000 + 100 * (start + n) + 10 * v + k}/1795000000/file.mkv", "duration": 5400000, "file": seen(f), "size": 1, "container": "mkv"} for k, f in enumerate(parts)]} for v, parts in enumerate(it["media"])]} for n, it in enumerate(page)]
+    return h._send({"MediaContainer": mc})
 
 def start(world, port=0, host="127.0.0.1", mangle_seed=None):
     rnd = random.Random(mangle_seed) if mangle_seed is not None else None
@@ -143,6 +193,7 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
                 if mode == "queue": return self._send({"queue": {"version": "5.1.3", "paused": False, "noofslots": len(world.get("sab_queue", [])), "status": "Downloading", "slots": [{"nzo_id": g["nzo_id"], "filename": g["name"], "labels": [], "cat": g.get("category", ""), "mbleft": "1", "mb": "2", "percentage": "50", "status": "Downloading"} for g in world.get("sab_queue", [])]}})
                 if mode == "get_config": return self._send({"config": {"misc": {"download_dir": world.get("sab_incomplete", "Downloads/incomplete"), "complete_dir": "Downloads/complete"}}})
                 world.setdefault("_writes", []).append(("SABnzbd", mode)); return self._send({"status": False, "error": "not implemented"})
+            if u.path.startswith("/plex/"): return _plex(self, world, u, q)   # P2.5
             self._send({"error": "not found"}, 404)
         def _xml(self, result=None, fault=None):
             if rnd is not None and fault is None and rnd.random() < 0.6: result = _mangle(json.loads(json.dumps(result)), rnd)
@@ -196,6 +247,7 @@ def start(world, port=0, host="127.0.0.1", mangle_seed=None):
             if u.path == "/qbit/api/v2/auth/login":
                 f = urllib.parse.parse_qs(raw.decode()); ok = f.get("username", [""])[0] == "test" and f.get("password", [""])[0] == "test"
                 self._cookie = "SID=xyz; Path=/"; return self._send(None, 200 if ok else 403, b"Ok." if ok else b"Fails.")
+            if u.path.startswith("/plex/"): world.setdefault("_writes", []).append(("Plex", u.path)); return self._send(None, 405, b"")   # Dedupearr only ever reads Plex
             if u.path == "/qbit/api/v2/torrents/delete": f = urllib.parse.parse_qs(raw.decode()); world.setdefault("_removed", []).append((f.get("hashes", [""])[0], f.get("deleteFiles", [""])[0])); return self._send(None, 200, b"")
             self._send({"error": "not found"}, 404)
     srv = ThreadingHTTPServer((host, port), H); threading.Thread(target=srv.serve_forever, daemon=True).start(); return srv
