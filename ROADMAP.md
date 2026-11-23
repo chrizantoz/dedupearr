@@ -24,6 +24,7 @@ Proposal and research: the owner's doc "Dedupearr: the truth about your storage"
 
 - 🟢 (2026-11-12) CodeQL #11/#12: the container-settings password was compared through a quick SHA-256; it is now slow-hashed (PBKDF2, 200k rounds) like a page-set one. Gate: `tests/auth.py`.
 - 🟢 (2026-11-12) CodeQL #3–#8: the holding bin now looks up the scan's record of a file before it touches the disk, and works only from the recorded path. The old checks (inside the scan folders, same file as scanned) already stopped misuse; this makes the order plain. Gate: `tests/fixes.py`.
+- 🟢 (2026-11-22) CodeQL #14 (#32): four checks in `tests/settings.py` printed a secret setting or a whole connection (address and key) when they failed, so a CI log could have shown a key. They now say in words what went wrong. Gate: `uibot/lint_checks.py` reads every test and refuses a failure message built from a password, key, token or connection object.
 
 ## 📚 What bugs taught us (added 2026-11-12)
 

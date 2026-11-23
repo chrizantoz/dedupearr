@@ -4,6 +4,8 @@ All dates 2026. Image: `ghcr.io/chrizantoz/dedupearr`.
 
 ## Unreleased — phase 2, ask the apps; phase 3 begins (2026-11-12)
 
+- Tests (#32): a failed settings check no longer prints a secret setting or a connection with its key; a lint now refuses that in every test.
+
 - New **Setup** tab (P4.1, #13). First the shared-mount test: "Can a library file and a download be one file?", answered from Dedupearr's own mounts and from each arr's import history (an arr that takes downloads from `/downloads` and puts the library in `/tv` copies every import when those are two mounts in its container), with the one-line change when the answer is no. Then one block per arr and download client: address, user, password or API key (never sent back to the page), where it comes from, whether it answered on the last scan, **Save** and **Test** (asks the app with what is saved, reads only). At the bottom, what the arrs list on their Download Clients page.
 - New **Settings** tab (P1.7): recycle-bin days, the seeding rule, the smallest file, the scan time, and the folders and folder names that mean library, downloads or recycle bin can be changed on the page; the next scan uses them. A value set on the container always wins and shows locked. Fixes, the folders to scan and the holding-bin days stay container-only. Without a sign-in only your own network may change settings, and a new address forgets the password saved for the old one. Saved in the database in the config folder. Tests: `tests/settings.py` (50 checks), five new mutants, two browser personas.
 

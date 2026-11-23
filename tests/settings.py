@@ -22,7 +22,7 @@ d.load_settings(); d.scan(now=now); c = d.db(); by = lambda: {i["path"]: i for i
 st, j = call("/api/settings"); items = {i["name"]: i for i in j.get("items", [])}
 check("the Settings answer lists every setting with where it comes from", st == 200 and {"RECYCLE_DAYS", "LIBRARY_HINTS", "SEED_RULE", "SONARR_URL", "DELUGE_PASSWORD"} <= set(items) and items["RECYCLE_DAYS"]["source"] == "default", (st, list(items)[:5]))
 check("a value set on the container is shown as set there and locked", items["MIN_SIZE_MB"]["source"] == "container" and items["MIN_SIZE_MB"]["locked"] and items["MIN_SIZE_MB"]["value"] == "1", items["MIN_SIZE_MB"])
-check("a password or key never comes back to the page, only whether one is set", items["DELUGE_PASSWORD"]["value"] == "" and items["DELUGE_PASSWORD"]["saved"] is True and "test" not in json.dumps([i for i in j["items"] if i["kind"] == "secret"]), items["DELUGE_PASSWORD"])
+check("a password or key never comes back to the page, only whether one is set", items["DELUGE_PASSWORD"]["value"] == "" and items["DELUGE_PASSWORD"]["saved"] is True and "test" not in json.dumps([i for i in j["items"] if i["kind"] == "secret"]), "a secret setting showed its value, or was not marked as saved")
 check("a connection whose address is set on the container is locked as a whole (its password too)", items["SONARR_APIKEY"]["locked"] and items["SONARR_URL"]["locked"] and not items["RADARR_URL"]["locked"])
 check("this browser on the same machine may change settings", j.get("writable") is True, j.get("why_not"))
 check("FIX_MODE, the scanned folders and the holding days are not settings the page can change", not {"FIX_MODE", "SCAN_ROOTS", "HOLD_DAYS", "HOLDING_DIR"} & set(items))
@@ -49,16 +49,16 @@ st, j = call("/api/settings", {"set": {"SONARR_APIKEY": "stolen"}}); check("the 
 st, j = call("/api/settings", {"set": {"FIX_MODE": "on"}}); check("FIX_MODE cannot be switched on from the page", st == 400 and d.FIX_MODE != "on", (st, j))
 # connections (P4.1): typed on the Setup tab, tested with what is saved, the password forgotten when the address changes
 st, j = call("/api/settings", {"set": {"RADARR_URL": f"{M}/radarr/", "RADARR_APIKEY": "test"}})
-check("an arr typed on the Setup tab is used: its address, its key, its source", st == 200 and d.ARRS["radarr"] == {"url": f"{M}/radarr", "key": "test"}, (st, d.ARRS["radarr"]))
+check("an arr typed on the Setup tab is used: its address, its key, its source", st == 200 and d.ARRS["radarr"] == {"url": f"{M}/radarr", "key": "test"}, (st, "the saved address or key is not what was typed"))
 st, j = call("/api/setup/test", {"name": "Radarr"}); check("Test asks Radarr with what is saved and answers in a sentence", st == 200 and j["ok"] and "Radarr answered" in j["note"] and j["note"].endswith("."), j)
 st, j = call("/api/setup/test", {"name": "Deluge"}); check("Test asks a download client (reads only) and says what it knows", j.get("ok") and "4 torrents" in j["note"], j)
 cs = dict(d.CLIENT_STATUS); call("/api/setup/test", {"name": "SABnzbd"}); check("a test is not a scan: About keeps what the last scan learned", d.CLIENT_STATUS == cs)
 st, j = call("/api/settings", {"set": {"RADARR_URL": "http://127.0.0.1:9/elsewhere"}}); items = {i["name"]: i for i in call("/api/settings")[1]["items"]}
-check("a new address forgets the saved key, so a key is never sent to an address it was not typed for", st == 200 and items["RADARR_APIKEY"]["saved"] is False and d.ARRS["radarr"]["key"] == "", (items["RADARR_APIKEY"], d.ARRS["radarr"]))
+check("a new address forgets the saved key, so a key is never sent to an address it was not typed for", st == 200 and items["RADARR_APIKEY"]["saved"] is False and d.ARRS["radarr"]["key"] == "", "the key was still marked saved, or still in memory, after the address changed")
 st, j = call("/api/setup/test", {"name": "Radarr"}); check("Test without a key says what is missing", not j["ok"] and "no address or API key" in j["note"], j)
 call("/api/settings", {"set": {"RADARR_URL": f"{M}/radarr", "RADARR_APIKEY": "wrong"}}); st, j = call("/api/setup/test", {"name": "Radarr"})
 check("a refused key is named as such", not j["ok"] and "refused" in j["note"], j)
-st, j = call("/api/settings", {"set": {"RADARR_APIKEY": ""}}); check("an empty password box keeps the saved one", d.ARRS["radarr"]["key"] == "wrong", d.ARRS["radarr"])
+st, j = call("/api/settings", {"set": {"RADARR_APIKEY": ""}}); check("an empty password box keeps the saved one", d.ARRS["radarr"]["key"] == "wrong", "the saved key changed when the box was left empty")
 call("/api/settings", {"set": {"RADARR_APIKEY": "test"}})
 st, j = call("/api/settings", {"set": {"RTORRENT_URL": "http://127.0.0.1:9/RPC2"}}); check("a client address saved on the page wins over the one an arr lists, and says it came from the page", d.CLIENTS["rTorrent"]["url"].endswith(":9/RPC2") and d.CLIENT_SOURCE["rTorrent"] == "page", d.CLIENT_SOURCE)
 call("/api/settings", {"reset": ["RTORRENT_URL"]}); check("Use the default hands it back to the arr's list", "rTorrent" not in d.CLIENT_SOURCE)

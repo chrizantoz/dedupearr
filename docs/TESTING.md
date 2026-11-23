@@ -14,7 +14,7 @@ Same approach as Auditarr: bots that behave like a careful user and a careless n
 | ⏱️ | **Performance budget** | `tests/perf_budget.py`: judging 60,000 files under 8 s, the page's state under 4 s | a quadratic loop that only shows on a big library |
 | 🤖 | **UI bot** | `uibot/ui_bot.js` in jsdom with recorded real answers (`uibot/fixtures/`): every filter, tile, search, Ignore, Scan now, Space, About; checks are data-relative | a button that does nothing, a count that does not match the data, a raw code on screen |
 | 🧩 | **Edge worlds** | `uibot/edge_fixtures.py` → tidy library, empty library, 3,000 rows, app unreachable, failed scan; the UI bot runs on each | a page that only works on a messy library |
-| 🔍 | **Bot lints** | `uibot/lint_checks.py` (no fixed counts in checks), `uibot/lint_buttons.py` (every button is pressed by some bot) | a check that passes by accident, a button nobody tests |
+| 🔍 | **Bot lints** | `uibot/lint_checks.py` (no fixed counts in checks; a failed test never prints a password, key or connection), `uibot/lint_buttons.py` (every button is pressed by some bot) | a check that passes by accident, a button nobody tests |
 | 🌐 | **Real browser** | `uibot/browser_bot.js`: Playwright Chromium, phone and desktop, screenshots, the tasks a person would try ("how much can I get back?", "which files are stored twice and why?", "stop showing this one") | layout that scrolls sideways on a phone, a flow a real person gets stuck in |
 | 🛡️ | **Image scan** | `docker build` + Trivy, CRITICAL and HIGH, fail the build | a known vulnerability in the base image |
 | 📦 | **Delivery** | image pushed to GHCR only when every step above is green; tagged `latest`, the commit, and the version on a release | shipping an untested build |
