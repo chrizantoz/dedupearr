@@ -2,6 +2,7 @@
 Flags `check(` lines in the bots that compare a length/size/count with a literal of 3 or more, unless the line says why with `// fixed:`.
 A second rule, for the Python tests (#32): what a failed check prints must never be an object that holds a password or key (a secret
 setting, a connection from ARRS/CLIENTS, an Authorization header). Say in words what went wrong instead.
+Two housekeeping rules: a test that makes a temporary folder removes it (#36), and no committed link points outside the repo (#35).
 Run: python3 uibot/lint_checks.py   Exit 1 on findings."""
 import ast, glob, os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__)); bad = []
@@ -19,4 +20,12 @@ for path in sorted(glob.glob(os.path.join(HERE, "..", "tests", "*.py"))):
             if isinstance(info, ast.Constant): continue   # a sentence written in the test is fine
             text = ast.get_source_segment(src, info) or ""
             if SECRET.search(text): bad.append(f"tests/{os.path.basename(path)}:{node.lineno}: a failed check would print `{text[:60]}`  ->  it can hold a password or key; say what went wrong in words")
-print("\n".join(bad) if bad else "bot checks: no fixed counts, no secrets in failure output"); sys.exit(1 if bad else 0)
+    if "mkdtemp" in src and "rmtree" not in src: bad.append(f"tests/{os.path.basename(path)}: makes a temporary folder and never removes it  ->  atexit.register(shutil.rmtree, TMP, ignore_errors=True) (#36)")
+import subprocess  # noqa: E402
+try: tracked = subprocess.run(["git", "ls-files", "-s"], cwd=os.path.join(HERE, ".."), capture_output=True, text=True, timeout=30).stdout.splitlines()
+except Exception: tracked = []   # not a git checkout (an unpacked archive): nothing to check
+for line in tracked:
+    if line.startswith("120000 "):   # a committed link: fine inside the repo, never to a folder on someone's machine (#35)
+        name = line.split("\t", 1)[1]; target = os.readlink(os.path.join(HERE, "..", name)) if os.path.islink(os.path.join(HERE, "..", name)) else ""
+        if target.startswith(("/", "~")) or target.startswith(".." + os.sep + ".."): bad.append(f"{name}: a committed link that points outside the repo  ->  remove it from git and ignore it")
+print("\n".join(bad) if bad else "bot checks: no fixed counts, no secrets in failure output, no leftover temp folders, no links out of the repo"); sys.exit(1 if bad else 0)

@@ -1,9 +1,10 @@
 """Fuzz the client and arr answers: the fake clients reply with randomly wounded JSON (keys gone, nulls, wrong types, huge strings).
 The scan must finish every time, verdict codes must stay valid, and nothing may be called waste without a size.
 Run: python tests/fuzz_clients.py [rounds=12] [seed=7]   Exit 1 on any broken rule or crash."""
-import os, sys, time, tempfile, socket
+import os, sys, time, tempfile, socket, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-fuzzc-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 import fake_disk, mock_clients  # noqa: E402
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 12; SEED = int(sys.argv[2]) if len(sys.argv) > 2 else 7
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{port}"

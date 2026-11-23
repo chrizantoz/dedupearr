@@ -1,9 +1,10 @@
 """Performance budget: judging 60,000 recorded files (a large library) must stay under a few seconds, so a nightly scan is dominated by
 the disk walk, never by the verdict logic. Inserts rows straight into the database (no real files) and times judge().
 Run: python tests/perf_budget.py   Exit 1 when over budget."""
-import os, sys, time, random, tempfile
+import os, sys, time, random, tempfile, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT)
 os.environ.update(CONFIG_DIR=tempfile.mkdtemp(prefix="dedupearr-perf-"), SCAN_ROOTS="/nonexistent")
+atexit.register(shutil.rmtree, os.environ["CONFIG_DIR"], ignore_errors=True)   # removed when the test ends (#36)
 import dedupearr as d  # noqa: E402
 N = 60000; rnd = random.Random(1); c = d.db(); now = time.time(); rows = []
 for i in range(N):

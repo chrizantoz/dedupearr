@@ -1,8 +1,9 @@
 """Phase 2: with the fake Deluge, NZBGet, qBittorrent and arrs answering, downloads get their real verdicts and the seeding rule decides
 "can go now". Run: python tests/clients.py   Exit 1 on failure."""
-import os, sys, json, time, tempfile, socket
+import os, sys, json, time, tempfile, socket, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-clients-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 import fake_disk, mock_clients  # noqa: E402
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{port}"
 now = time.time(); P = fake_disk.build(DATA, now)

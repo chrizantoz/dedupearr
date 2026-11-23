@@ -1,7 +1,8 @@
 """Every verdict on the fake disk, and the numbers that go with them. Run: python tests/verdicts.py   Exit 1 on failure."""
-import os, sys, tempfile, time
+import os, sys, tempfile, time, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-test-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100")
 import fake_disk  # noqa: E402
 import dedupearr as d  # noqa: E402

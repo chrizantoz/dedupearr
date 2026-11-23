@@ -2,9 +2,10 @@
 page saves lands in the config folder's database, survives a restart and changes the next scan; passwords and keys never come back to the page;
 a new address forgets the old password; without a sign-in only your own network may change anything; the shared-mount test says whether a
 library file and a download can be one file, and what to change when not. Run: python tests/settings.py   Exit 1 on failure."""
-import os, sys, json, time, tempfile, socket, urllib.request, urllib.error
+import os, sys, json, time, tempfile, socket, urllib.request, urllib.error, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-settings-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 import fake_disk, mock_clients  # noqa: E402
 s = socket.socket(); s.bind(("127.0.0.1", 0)); mport = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{mport}"
 now = time.time(); P = fake_disk.build(DATA, now); P.update(mock_clients.extra_files(DATA, fake_disk.blob)); world = mock_clients.world_for(P, DATA); msrv = mock_clients.start(world, mport)

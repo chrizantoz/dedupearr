@@ -1,10 +1,11 @@
 """The morning message (P2.6): pinned word for word on the fake disk, delivered to a mock ntfy with the right headers, served at /api/digest.
 A changed wording is a deliberate change: run with --update to re-pin tests/golden/digest.txt.
 Run: python tests/digest.py [--update]   Exit 1 on failure."""
-import os, sys, json, time, tempfile, socket, threading, urllib.request
+import os, sys, json, time, tempfile, socket, threading, urllib.request, atexit, shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-digest-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100", PUBLIC_URL="https://dedupearr.example.test/")
 for k in ("NTFY_URL", "NTFY_TOKEN", "NTFY_TOKEN_FILE", "DIGEST", "SANDBOX"): os.environ.pop(k, None)
 import fake_disk  # noqa: E402

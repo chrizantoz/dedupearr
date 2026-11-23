@@ -2,9 +2,10 @@
 "Outside Plex's folders", one inside a Plex folder that Plex has not indexed is "Plex does not show it" after a day of grace, and nothing is
 said about Plex at all unless the whole of Plex was read: a Plex that is down, refuses the token, or loses one page of one library gives no
 Plex verdicts that night. The token never reaches a log line, an address or the page. Run: python tests/plex.py   Exit 1 on failure."""
-import os, sys, json, time, tempfile, socket
+import os, sys, json, time, tempfile, socket, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-plex-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 import fake_disk, mock_clients  # noqa: E402
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{port}"
 now = time.time(); P = fake_disk.build(DATA, now); P.update(mock_clients.extra_files(DATA, fake_disk.blob)); world = mock_clients.world_for(P, DATA)

@@ -1,8 +1,9 @@
 """Every sentence a person reads is plain: no raw codes, no paths in the sentence itself, ends with a full stop, says what happens next.
 Run: python tests/plain_language.py   Exit 1 on failure."""
-import os, re, sys, tempfile
+import os, re, sys, tempfile, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT)
 os.environ.update(CONFIG_DIR=tempfile.mkdtemp(prefix="dedupearr-pl-"), SCAN_ROOTS="/nonexistent")
+atexit.register(shutil.rmtree, os.environ["CONFIG_DIR"], ignore_errors=True)   # removed when the test ends (#36)
 import dedupearr as d  # noqa: E402
 results = []
 def check(name, cond, info=""): results.append(bool(cond)); print(("PASS " if cond else "FAIL ") + name + ("" if cond else f"  [{str(info)[:200]}]"))

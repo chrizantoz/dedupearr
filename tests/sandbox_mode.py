@@ -1,8 +1,9 @@
 """The public demo (SANDBOX=1): the page knows it is the demo, the health says so, and writes are rate-limited per visitor.
 Run: python tests/sandbox_mode.py   Exit 1 on failure."""
-import os, sys, json, time, tempfile, socket, urllib.request, urllib.error
+import os, sys, json, time, tempfile, socket, urllib.request, urllib.error, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-sbx-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", SANDBOX="1", SANDBOX_RATE="5")
 import fake_disk  # noqa: E402
 import dedupearr as d  # noqa: E402

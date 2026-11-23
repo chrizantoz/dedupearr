@@ -5,7 +5,7 @@ then Z to A, and compares each file's verdict, category, twin and evidence. Run:
 import os, re, sys, json, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
 if len(sys.argv) > 1:   # child: one scan with the folders listed in the given order, answers printed as JSON
-    import time, tempfile, socket
+    import time, tempfile, socket, atexit, shutil
     rev = sys.argv[1] == "za"; real = os.scandir
     class Listed:
         def __init__(self, p): self.items = sorted(real(p), key=lambda e: e.name, reverse=rev)
@@ -16,6 +16,7 @@ if len(sys.argv) > 1:   # child: one scan with the folders listed in the given o
     os.scandir = lambda p=".": Listed(p)
     sys.path.insert(0, os.path.dirname(HERE)); sys.path.insert(0, HERE)
     TMP = tempfile.mkdtemp(prefix="dedupearr-order-"); DATA = os.path.join(TMP, "data")
+    atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
     import fake_disk, mock_clients
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{port}"
     now = time.time(); P = fake_disk.build(DATA, now); P.update(mock_clients.extra_files(DATA, fake_disk.blob)); mock_clients.start(mock_clients.world_for(P, DATA), port)
@@ -23,7 +24,7 @@ if len(sys.argv) > 1:   # child: one scan with the folders listed in the given o
     import dedupearr as d
     d.scan(now=now); rel = lambda p: (p or "").replace(DATA, "")
     out = {rel(i["path"]): [i["code"], i["category"], rel(i.get("twin")), rel(i["evidence"]).replace(str(port), "PORT")] for i in d.state(d.db())["items"]}
-    sys.stderr.write("ANSWERS " + json.dumps(out) + "\n"); os._exit(0)
+    sys.stderr.write("ANSWERS " + json.dumps(out) + "\n"); shutil.rmtree(TMP, ignore_errors=True); os._exit(0)
 def run(order):
     r = subprocess.run([sys.executable, os.path.abspath(__file__), order], capture_output=True, text=True, timeout=300)
     line = [x for x in r.stderr.splitlines() if x.startswith("ANSWERS ")]

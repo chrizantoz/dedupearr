@@ -90,10 +90,13 @@ PLEX_PAGE = 1000; PLEX_MAX_PAGES = 500   # items per request, and the most reque
 PLEX_CODES = ("NOT_IN_PLEX_FOLDER", "NOT_IN_PLEX")
 CLIENT_STATUS = {}   # "Deluge" -> {"ok": bool, "n": int, "note": str}; shown on About
 
-def map_client_path(p):
-    for a, b in CLIENT_PATH_MAP:
-        if p.startswith(a): return b.rstrip("/") + p[len(a.rstrip("/")):]
+def map_path(p, pairs):
+    """theirpath=ourpath, on a folder boundary: /downloads never rewrites /downloads2 (#34)."""
+    for a, b in pairs:
+        a = a.rstrip("/")
+        if p == a or p.startswith(a + "/"): return b.rstrip("/") + p[len(a):]
     return p
+def map_client_path(p): return map_path(p, CLIENT_PATH_MAP)
 
 CLIENT_TIMEOUT = int(_env("CLIENT_TIMEOUT", "60") or 60)
 def http_json(url, data=None, headers=None, cj=None, timeout=None, form=False):
@@ -417,10 +420,7 @@ def queue_for(path, queue):
         d = os.path.dirname(d)
     return None
 
-def map_auditarr_path(p):
-    for a, b in AUDITARR_PATH_MAP:
-        if p.startswith(a): return b.rstrip("/") + p[len(a.rstrip("/")):]
-    return p
+def map_auditarr_path(p): return map_path(p, AUDITARR_PATH_MAP)
 def read_auditarr():
     """Auditarr's own list (its /api/changed): the files it changed, with when and what in plain words, and where its trash is.
     -> {"files": {path: (ts, what)}, "trash": [folder]}. An Auditarr that does not answer leaves both empty and is reported on About."""
@@ -1841,7 +1841,7 @@ def setup_view(c):
     for g, names in CONN_GROUPS.items():
         u, src = setting(names[0])
         if g in CLIENTS and not u and ACTIVE.get(g, {}).get("url"): u, src = ACTIVE[g]["url"], "arr"
-        known = plex_status() if g == "Plex" else st.get(g) or st.get(g.capitalize()) or {}
+        known = plex_status() if g == "Plex" else auditarr_status() if g == "Auditarr" else st.get(g) or st.get(g.capitalize()) or {}   # Plex and Auditarr keep their own status, not among the download clients (#37)
         conns.append({"name": g, "kind": "arr" if g.lower() in ARRS else "auditarr" if g == "Auditarr" else "plex" if g == "Plex" else "usenet" if g in USENET else "torrent", "fields": names, "url": u, "source": src, "locked": group_locked(names[0]),
                       "status": ("ok" if known.get("ok") else "warn") if known else "", "note": str(known.get("note") or "")[:200]})
     return {"mount": mount_test(c), "discovered": discovery(), "connections": conns}

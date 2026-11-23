@@ -1,9 +1,10 @@
 """The page's contract: start the real server on the fake disk, hit every endpoint, check shapes and the health rule.
 Also writes uibot/fixtures/state.json and about.json so the UI bot tests the page against real answers.
 Run: python tests/api.py   Exit 1 on failure."""
-import os, sys, json, time, tempfile, socket, urllib.request
+import os, sys, json, time, tempfile, socket, urllib.request, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-api-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100")
 import fake_disk, mock_clients  # noqa: E402
 _s = socket.socket(); _s.bind(("127.0.0.1", 0)); _mport = _s.getsockname()[1]; _s.close(); _M = f"http://127.0.0.1:{_mport}"

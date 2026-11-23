@@ -1,8 +1,9 @@
 """Chaos: things that go wrong on a real server must not stop the scan or produce a wrong verdict. A folder we may not list, a file we may
 not read while fingerprinting, a scan root that is not mounted, a broken symlink, an empty root. Run: python tests/chaos.py   Exit 1 on failure."""
-import os, sys, tempfile
+import os, sys, tempfile, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-chaos-"); DATA = os.path.join(TMP, "data"); MISSING = os.path.join(TMP, "not-mounted")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=f"{DATA},{MISSING},{os.path.join(TMP, 'empty')}", MIN_SIZE_MB="1", HASH_BUDGET_MB="100")
 os.makedirs(os.path.join(TMP, "empty"))
 import fake_disk  # noqa: E402

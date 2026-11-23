@@ -4,6 +4,10 @@ All dates 2026. Image: `ghcr.io/chrizantoz/dedupearr`.
 
 ## Unreleased — phase 2, ask the apps; phase 3 begins (2026-11-12)
 
+- Fixed (#34): `CLIENT_PATH_MAP` and `AUDITARR_PATH_MAP` rewrote any path that started with the same letters (`/downloads=…` also changed `/downloads2/…`). They now match whole folder names, like the Plex map.
+- Fixed (#37): the Setup tab now shows what Auditarr said on the last scan.
+- Housekeeping (#35, #36): the repo no longer carries a link to a folder on a developer's machine, and every test removes its temporary folder when it ends. A lint checks both.
+
 - New, a Plex reader (P2.5): with Plex's address and token set (`PLEX_URL`, `PLEX_TOKEN`, on the container or on the Setup tab), Dedupearr asks Plex each night which folders its film and show libraries look in and which files it has indexed, and names the library files Plex cannot show. Two new verdicts, neither of them waste and neither with a fix button:
   - **Outside Plex's folders**: a library file in a folder no Plex library looks in, so Plex never shows it. It counts under *Needs a decision*, because it is never one file: a whole folder is invisible until you add it to a Plex library, or press Ignore to say it is meant to stay out.
   - **Plex does not show it**: a file inside a Plex folder that Plex has not indexed, usually a name Plex cannot match, a trailer or other extra, or a scan that has not run. This one is a quiet note and does not count under *Needs a decision*: one unmatched name is something to read when you wonder where a film went, not a decision, and counting each would bury the files that do cost space. A file less than a day old is never called this, because Plex may simply not have scanned yet.

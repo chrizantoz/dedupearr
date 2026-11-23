@@ -1,9 +1,10 @@
 """Sign-in: off without AUTH_USER/AUTH_PASSWORD; with them the page asks, except the container itself, TRUST_PROXY_AUTH's header,
 and (LOCAL_NO_LOGIN=1) a browser on your own network talking to the port directly. Through any reverse proxy it always asks.
 Run: python tests/auth.py   Exit 1 on failure."""
-import os, sys, json, tempfile, socket, urllib.request, urllib.error, urllib.parse
+import os, sys, json, tempfile, socket, urllib.request, urllib.error, urllib.parse, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT)
 TMP = tempfile.mkdtemp(prefix="dedupearr-auth-"); os.makedirs(os.path.join(TMP, "data"))
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=os.path.join(TMP, "data"), AUTH_USER="", AUTH_PASSWORD="", LOCAL_NO_LOGIN="", TRUST_PROXY_AUTH="0")
 import dedupearr as d  # noqa: E402
 results = []

@@ -1,8 +1,9 @@
 """Fuzz the scanner: random folder trees (random kinds, sizes, hardlinks, copies, bins) must never crash it, and the verdicts must obey
 the rules that define them. Run: python tests/fuzz_disk.py [worlds=25] [seed=7]   Exit 1 on any broken rule."""
-import os, sys, random, shutil, tempfile, time
+import os, sys, random, shutil, tempfile, time, atexit
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT)
 TMP = tempfile.mkdtemp(prefix="dedupearr-fuzz-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="50")
 import dedupearr as d  # noqa: E402
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 25; rnd = random.Random(int(sys.argv[2]) if len(sys.argv) > 2 else 7)

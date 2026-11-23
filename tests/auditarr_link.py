@@ -1,10 +1,11 @@
 """Living next to Auditarr (P2.4): Dedupearr reads Auditarr's list of files it changed (/api/changed) and where its trash is.
 A pretend Auditarr serves the list; the fake disk gains an Auditarr trash folder and a library file Auditarr rewrote.
 Run: python tests/auditarr_link.py   Exit 1 on failure."""
-import os, sys, json, time, tempfile, threading
+import os, sys, json, time, tempfile, threading, atexit, shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-aud-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 os.environ.update(CONFIG_DIR=os.path.join(TMP, "config"), SCAN_ROOTS=DATA, MIN_SIZE_MB="1", HASH_BUDGET_MB="100", SONARR_URL="http://127.0.0.1:9", SONARR_APIKEY="k", CLIENT_TIMEOUT="3")
 for k in ("AUDITARR_URL", "AUDITARR_PATH_MAP"): os.environ.pop(k, None)
 import fake_disk  # noqa: E402
@@ -61,6 +62,8 @@ c_ = d.db(); ab = d.about(c_)
 check("About says Auditarr was read and its trash is left alone", any(x["level"] == "ok" and "Auditarr: 3 files it changed are known; its trash is left alone." == x["text"] for x in ab["health"]), [x["text"] for x in ab["health"]])
 check("About lists the connection", ab["settings"]["connections"].get("Auditarr") == d.AUDITARR_URL)
 check("no sentence leaks a path or braces", all(DATA not in i["plain"] and "{" not in i["plain"] for i in S["items"]))
+su = {x["name"]: x for x in d.setup_view(c_)["connections"]}["Auditarr"]
+check("the Setup tab shows what Auditarr said on the last scan (#37)", su["status"] == "ok" and "3 files" in su["note"], "the Auditarr row on Setup had no status or note from the last scan")
 
 # ---- paths mapped when Auditarr sees the files elsewhere
 d.AUDITARR_PATH_MAP = [("/mnt/lib", DATA)]
@@ -68,6 +71,11 @@ answer["body"] = json.dumps({"trash_dir": "/mnt/lib/media/removed-by-audit", "fi
 S, by = scan()
 check("AUDITARR_PATH_MAP translates Auditarr's paths to ours", by[P["hdr_dl"]]["auditarr"] == {"what": "labelled the audio", "when": day} and by[P["tr_custom"]]["code"] == "AUDITARR_BIN", by[P["hdr_dl"]]["auditarr"])
 d.AUDITARR_PATH_MAP = []
+# ---- a path map works on whole folder names (#34)
+d.AUDITARR_PATH_MAP = [("/mnt/lib", "/ours")]; d.CLIENT_PATH_MAP = [("/downloads/", "/ours/torrents")]
+check("a path map rewrites its own folder", d.map_auditarr_path("/mnt/lib/a.mkv") == "/ours/a.mkv" and d.map_client_path("/downloads/tv/a.mkv") == "/ours/torrents/tv/a.mkv" and d.map_client_path("/downloads") == "/ours/torrents", "a mapped folder was not rewritten")
+check("a path map never rewrites a folder that only starts with the same letters", d.map_auditarr_path("/mnt/library2/a.mkv") == "/mnt/library2/a.mkv" and d.map_client_path("/downloads2/a.mkv") == "/downloads2/a.mkv", "a look-alike folder was rewritten")
+d.AUDITARR_PATH_MAP = []; d.CLIENT_PATH_MAP = []
 
 # ---- an Auditarr that does not answer: nothing breaks, the guess returns, About and the morning message say so
 for bad in ((500, b"oops"), (200, b"<html>sign in</html>"), (200, b'{"files": "x"}')):

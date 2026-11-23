@@ -1,8 +1,9 @@
 """Phase 3 gate: a 'fix' in dry run must leave the disk and the clients exactly as they were, every fixable row must have a plan in plain words,
 a fix never runs during a scan, and every attempt is written to the actions log. Run: python tests/fixes.py   Exit 1 on failure."""
-import os, sys, json, time, tempfile, socket, hashlib
+import os, sys, json, time, tempfile, socket, hashlib, atexit, shutil
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(__file__))
 TMP = tempfile.mkdtemp(prefix="dedupearr-fix-"); DATA = os.path.join(TMP, "data")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)   # the fake disk goes when the test ends, pass or fail (#36)
 import fake_disk, mock_clients  # noqa: E402
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close(); M = f"http://127.0.0.1:{port}"
 now = time.time(); P = fake_disk.build(DATA, now); P.update(mock_clients.extra_files(DATA, fake_disk.blob)); world = mock_clients.world_for(P, DATA); srv = mock_clients.start(world, port)
