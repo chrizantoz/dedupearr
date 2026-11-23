@@ -153,7 +153,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:43877/sonarr",
+   "value": "http://127.0.0.1:49729/sonarr",
    "saved": null
   },
   {
@@ -177,7 +177,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:43877/radarr",
+   "value": "http://127.0.0.1:49729/radarr",
    "saved": null
   },
   {
@@ -273,7 +273,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:43877/deluge",
+   "value": "http://127.0.0.1:49729/deluge",
    "saved": null
   },
   {
@@ -297,7 +297,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:43877/nzbget",
+   "value": "http://127.0.0.1:49729/nzbget",
    "saved": null
   },
   {
@@ -333,7 +333,7 @@
    "default": "",
    "source": "container",
    "locked": true,
-   "value": "http://127.0.0.1:43877/qbit",
+   "value": "http://127.0.0.1:49729/qbit",
    "saved": null
   },
   {

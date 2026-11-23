@@ -47,6 +47,7 @@ check("a movie and the seed linked to it are Movies (Radarr's root folder, then 
 check("Sonarr's anime flag wins: the library episode and its download copy are Anime", cat("hdr_lib") == "anime" and cat("hdr_dl") == "anime", (cat("hdr_lib"), cat("hdr_dl")))
 check("the same title in Sonarr's standard folder is TV shows, not Anime", cat("look_lib") == "tv", cat("look_lib"))
 check("a usenet download Sonarr imported is TV shows", by[P["usenet"]]["category"] == "tv", by[P["usenet"]]["category"])
+check("a leftover that happens to be the size of an unrelated movie names the file the arr imported it to, never that movie", by[P["usenet"]]["code"] == "LEFTOVER" and by[P["usenet"]]["twin"].endswith("/media/tv/Show/Season 01/Show - S01E01.mkv") and "Heat" not in by[P["usenet"]]["evidence"] + by[P["usenet"]]["plain"], (by[P["usenet"]]["twin"], by[P["usenet"]]["evidence"]))
 check("a software torrent no arr knows is Other", by[P["soft"]]["category"] == "other", by[P["soft"]]["category"])
 check("every row has a category and the totals add up", all(i["category"] in d.CAT_LABEL for i in S["items"]) and sum(cc["files"] for cc in S["categories"]) == len(S["items"]), S["categories"])
 check("a release name never outvotes its folder: FLAC and Dual Audio anime in completed/tv is TV, not Music (seen on the owner's server 2026-11-12)",

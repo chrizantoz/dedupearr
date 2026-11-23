@@ -743,7 +743,7 @@ def judge(c, now, ctx=None):
     budget = HASH_BUDGET_MB * 1024 * 1024
     for r in rows:
         if r["path"] in verdicts or r["kind"] != "download": continue
-        candidates = [l for l in lib_by_size.get(r["size"], []) if (l["dev"], l["ino"]) != (r["dev"], r["ino"])]
+        candidates = sorted((l for l in lib_by_size.get(r["size"], []) if (l["dev"], l["ino"]) != (r["dev"], r["ino"])), key=lambda l: l["path"])   # by name, so the answer never depends on the order the disk lists folders
         code, twin, ev = "DOWNLOAD_UNMATCHED", None, f"inode {r['ino']}, link count {r['nlink']}, no library file of {human(r['size'])}"
         if candidates:
             s1, f1, budget = fingerprint(c, r, True, budget)
@@ -769,6 +769,7 @@ def judge(c, now, ctx=None):
         if code in ("DOWNLOAD_UNMATCHED", "DOWNLOAD_OTHER_RELEASE", "LOOKALIKE"):   # a lookalike is only a size coincidence: the client and the arr say what the file really is
             if ai and ai.get("imported"):
                 gone = not os.path.exists(ai["imported"])
+                if code == "LOOKALIKE": twin, ev = None, f"inode {r['ino']}, link count {r['nlink']}, {human(r['size'])}"   # a lookalike is a size coincidence: the arr says which library file this was, never a stranger of the same size
                 code, twin = "LEFTOVER", twin or ai["imported"]
                 ev += f"; {ai['app'].capitalize()} imported it on {ai['when']} to {ai['imported']}" + (", and that file has since been replaced" if gone else ", which has since been rewritten (different content now)")
                 if not gone and (a := by_auditarr(ai["imported"])): extra_a[r["path"]] = a; twin = ai["imported"]; ev += f"; Auditarr rewrote it on {a['when']} (it {a['what']})"
