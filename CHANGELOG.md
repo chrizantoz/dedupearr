@@ -4,6 +4,7 @@ All dates 2026. Image: `ghcr.io/chrizantoz/dedupearr`.
 
 ## Unreleased — phase 2, ask the apps; phase 3 begins (2026-11-12)
 
+- New: **Delete all now** on the Actions tab empties the holding bin at once instead of waiting for the days to run out. It asks twice and says plainly that it cannot be undone; a file that changed while it sat in the bin is left alone; every deletion is written in the actions log.
 - Fixed (#39): with sign-in on, Auditarr could no longer read the daily summary, so the shared phone message said "no answer this morning". Set `DIGEST_KEY` on the container and the same text as **Dedupearr key** in Auditarr: the key opens `/api/digest` and nothing else, and a key under 16 characters counts as not set.
 - Fixed (#34): `CLIENT_PATH_MAP` and `AUDITARR_PATH_MAP` rewrote any path that started with the same letters (`/downloads=…` also changed `/downloads2/…`). They now match whole folder names, like the Plex map.
 - Fixed (#37): the Setup tab now shows what Auditarr said on the last scan.

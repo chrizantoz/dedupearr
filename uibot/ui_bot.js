@@ -17,6 +17,7 @@ const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true
       posts.push({ url: u, body: opts.body || "" });
       if (u.includes("api/scan")) return body({ ok: true, note: "scan started; the page updates itself" });
       if (u.includes("api/fix")) return body({ ok: true, dry_run: true, kind: "remove", steps: ["Ask Deluge to remove the torrent without deleting its files.", "Move the file into the holding bin (nothing is deleted).", "Keep it for 14 days, then delete it, unless you press Undo."], frees: 1, frees_h: "4.2 MB", note: "Dry run: nothing was changed." });
+      if (u.includes("api/purge")) { const h = (data.state.holding || {}).items || []; const n = h.length; h.length = 0; if (data.state.holding) { data.state.holding.bytes = 0; data.state.holding.bytes_h = "0 B"; } return body({ ok: true, done: n, left: 0, note: `Deleted ${n} files from the holding bin for good.` }); }
       if (u.includes("api/restore")) { const id = JSON.parse(opts.body).id; const h = (data.state.holding || {}).items || []; const k = h.findIndex(x => x.id === id); if (k >= 0) h.splice(k, 1); return body({ ok: true, note: "Put back in its old place. The next scan judges it again." }); }
       if (u.includes("api/setup/test")) return body({ ok: true, note: JSON.parse(opts.body).name + " answered (version 4.0.0)." });
       if (u.includes("api/settings")) return body({ ok: true, note: "Saved. The next scan uses it; press Scan now to see the change." });
@@ -150,6 +151,20 @@ process.on("unhandledRejection", e => errors.push("unhandled: " + String(e && e.
   if (held) {
     const rb = $("#hold-rows button[data-restore]"); const rid = +rb.dataset.restore; rb.click(); await sleep(120);
     check("Put back posts the held file's id and the row leaves the bin", posts.some(p => p.url.includes("api/restore") && JSON.parse(p.body).id === rid) && $$("#hold-rows button[data-restore]").length === held - 1, $$("#hold-rows button[data-restore]").length);
+  }
+  { // 'Delete all now' (owner ask 2026-11-24): the one button that deletes. It shows only while the bin holds files, asks twice, and says it cannot be undone
+    if (data.state.holding && Array.isArray(data.state.holding.items) && !data.state.holding.items.length && EDGE !== "down") {   // most recorded worlds have an empty bin: put two files in, so both presses are always tested
+      for (const k of [1, 2]) data.state.holding.items.push({ id: 9000 + k, orig: `/data/torrents/tv/Bot.Purge.${k}.mkv`, title: `Bot Purge ${k}`, size: 1000, size_h: "1 KB", kind: "bin", why: "nothing uses it", when: "2026-11-24T10:00", days_left: 13.5, note: "" });
+      data.state.holding.bytes = 2000; data.state.holding.bytes_h = "2 KB"; await w.eval("load()"); $("nav button[data-tab=actions]").click(); await sleep(80);
+    }
+    const left = ((data.state.holding || {}).items || []).length; const pb = $("#hold-purge");
+    check("'Delete all now' shows only while the holding bin holds files, and counts them", $("#hold-purge-box").hidden === (left === 0) && (left === 0 || (pb.textContent.includes(`Delete all ${left} now`) && /cannot be undone/.test(pb.title) && /for good/.test($("#hold-purge-box").textContent))), pb.textContent);
+    if (left) {
+      const p0 = posts.filter(p => p.url.includes("api/purge")).length; pb.click(); await sleep(30);
+      check("the first press of 'Delete all now' only asks to be sure and says it cannot be undone, nothing is posted", posts.filter(p => p.url.includes("api/purge")).length === p0 && /Sure\? This cannot be undone/.test(pb.textContent), pb.textContent);
+      pb.click(); await sleep(150); const sent = posts.filter(p => p.url.includes("api/purge")).pop();
+      check("the second press posts sure=true, the bin empties and the button leaves", !!sent && JSON.parse(sent.body).sure === true && /nothing in the holding bin/.test($("#hold-rows").textContent) && $("#hold-purge-box").hidden, $("#hold-rows").textContent.slice(0, 80));
+    }
   }
   $("nav button[data-tab=files]").click(); await sleep(20);
   // ignore -> item leaves Needs you

@@ -62,6 +62,22 @@ open(orphan + ".tmp", "wb").close(); os.remove(orphan + ".tmp")
 n, b = d.purge_holding(c, now + (d.HOLD_DAYS - 1) * 86400); check("the purge keeps a file whose days have not run out", n == 0 and os.path.exists(obj["dest"]))
 n, b = d.purge_holding(c, now + (d.HOLD_DAYS + 1) * 86400); check("after its days the purge deletes it and logs it", n == 1 and not os.path.exists(obj["dest"]) and any(a["kind"] == "purge" for a in d.actions(c)), (n, b))
 check("a purged file cannot be put back", d.restore_held(c, hid)[0] == 409)
+# ---- 'Delete all now' (owner ask 2026-11-24): the holding bin emptied by hand, before the days run out
+for k in ("purge1", "purge2", "purge3"): fake_disk.blob(os.path.join(DATA, "torrents", "tv", f"Nobody.Knows.{k}.mkv"), 2, "unique-" + k)
+d.scan(now=now); PG = [os.path.join(DATA, "torrents", "tv", f"Nobody.Knows.{k}.mkv") for k in ("purge1", "purge2", "purge3")]
+dests = [d.ui_fix(c, p)[1]["dest"] for p in PG]; check("delete all now: three files wait in the holding bin", len(d.holding(c)["items"]) == 3 and all(os.path.exists(x) for x in dests))
+code, obj = d.ui_purge(c, None); check("delete all now: refused without sure=true, nothing is deleted", code == 400 and "for good" in obj["error"] and all(os.path.exists(x) for x in dests), (code, obj))
+code, obj = d.ui_purge(c, "yes"); check("delete all now: only a real true counts", code == 400 and all(os.path.exists(x) for x in dests), (code, obj))
+d.SCANNING["on"] = True; code, obj = d.ui_purge(c, True); d.SCANNING["on"] = False; check("delete all now: refused during a scan", code == 409 and all(os.path.exists(x) for x in dests), (code, obj))
+open(dests[2], "ab").write(b"x"); keep_hid = next(h["id"] for h in d.holding(c)["items"] if h["orig"] == PG[2])
+n_before = d.purge_holding(c, now)[0]; check("the nightly purge still leaves fresh files alone", n_before == 0 and all(os.path.exists(x) for x in dests))
+code, obj = d.ui_purge(c, True); left = d.holding(c)["items"]
+check("delete all now: every file that is still the one that went in is deleted, days left or not", code == 200 and obj["done"] == 2 and not os.path.exists(dests[0]) and not os.path.exists(dests[1]) and "for good" in obj["note"], (code, obj))
+check("delete all now: a file that changed inside the bin is left alone and says why", os.path.exists(dests[2]) and obj["left"] == 1 and len(left) == 1 and left[0]["id"] == keep_hid and "not the file that went in" in left[0]["note"] and "left alone" in obj["note"], (obj, left))
+check("delete all now: each deletion is written on the Actions tab as yours", sum(1 for a in d.actions(c) if a["kind"] == "purge" and "you emptied" in a["detail"]) == 2, [a for a in d.actions(c)][:3])
+check("delete all now: a deleted file cannot be put back", d.restore_held(c, next(r["id"] for r in c.execute("SELECT id FROM held WHERE orig=?", (PG[0],))))[0] == 409)
+os.remove(dests[2]); code, obj = d.ui_purge(c, True); check("delete all now: a file already gone from the bin is cleared from the list", code == 200 and d.holding(c)["items"] == [], (code, obj))
+code, obj = d.ui_purge(c, True); check("delete all now: an empty bin says so", code == 200 and obj["done"] == 0 and "already empty" in obj["note"], (code, obj))
 for k in ("stray1", "stray2"): fake_disk.blob(os.path.join(DATA, "torrents", "tv", f"Nobody.Knows.{k}.mkv"), 2, "unique-" + k)
 d.scan(now=now); bins = [i for i in d.state(c)["items"] if i["fixable"] and i["fix_kind"] == "bin"]
 check("the test world has orphans left to move", len(bins) >= 2, [i["path"] for i in bins])

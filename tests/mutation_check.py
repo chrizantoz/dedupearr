@@ -4,6 +4,8 @@ Run: python tests/mutation_check.py [all | index]   (CI rotates one mutant per d
 import datetime, os, shutil, subprocess, sys, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently breaks the rule)
+    ("holding bin: Delete all now deletes without being told you are sure", 'if sure is not True: return 400, {"error": "this deletes every file', 'if False: return 400, {"error": "this deletes every file'),
+    ("holding bin: Delete all now runs beside a scan", 'if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so nothing is deleted', 'if False: return 409, {"error": "a scan is running; try again in a minute, so nothing is deleted'),
     ("hardlinks never recognised", 'if "library" in kinds and "download" in kinds:', 'if False and "library" in kinds and "download" in kinds:'),
     ("identical copies never confirmed", "if s1 == s2 and (f1 is None or f2 is None or f1 == f2):", "if False and s1 == s2:"),
     ("header-differs duplicates ignored", 'if r["size"] > 3 * SAMPLE and s1.split(":")[1:] == s2.split(":")[1:]:', 'if False:'),
@@ -22,7 +24,7 @@ MUTANTS = [   # (name, exact text in dedupearr.py, replacement that silently bre
     ("vanished files kept forever", 'if r["path"] not in seen: c.execute("DELETE FROM verdict WHERE id=?"', 'if False: c.execute("DELETE FROM verdict WHERE id=?"'),
     ("library size double-counts hardlinks", "GROUP BY dev, ino", "GROUP BY path"),
     ("holding bin moves a file that changed since the scan", 'if (st.st_dev, st.st_ino, st.st_size) != (f["dev"], f["ino"], f["size"]):', 'if False:'),
-    ("holding bin purge ignores the days", 'AND at < ?", (now - HOLD_DAYS * 86400,)', 'AND at < ?", (now + 1e12,)'),
+    ("holding bin purge ignores the days", '(now + 1 if everything else now - HOLD_DAYS * 86400,)', '(now + 1e12,)'),
     ("Put back overwrites a new file", 'if os.path.lexists(r["orig"]):\n', 'if False:\n'),
     ("a download still coming in called seeding only", 'elif ci and not ci.get("finished") and code in ("DOWNLOAD_UNMATCHED", "LOOKALIKE"):', 'elif False:'),
     ("the arr's import queue ignored", 'elif (aq := queue_for(r["path"], queue)) and code in', 'elif (aq := None) and code in'),

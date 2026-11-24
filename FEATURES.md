@@ -66,6 +66,7 @@ With Plex's address and token set (`PLEX_URL`, `PLEX_TOKEN`, or the Plex block o
 | Ignore / Un-ignore | a row that needs a decision | hides the row from Needs a decision (it stays under Everything with an *ignored* chip) and brings it back |
 | evidence | under every sentence | shows the inodes, link counts, sizes, checksum result and the other file's path |
 | Preview fix | a fixable row | shows the exact steps (relink / remove through the client / holding bin / empty an old bin) and the space freed; a dry run by default (`FIX_MODE=dryrun`), logged in `/api/actions` |
+| Delete all now | Actions tab, above the holding bin | deletes every file in the holding bin for good, without waiting for its days; asks twice and says it cannot be undone; a file that changed inside the bin is left alone |
 
 Phase 3 adds: Relink, Remove old torrent, Empty bin, Move to holding bin, Undo, Apply to all with this cause.
 

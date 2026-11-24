@@ -1141,20 +1141,31 @@ def tidy_holding(d):
         try: os.rmdir(d)
         except OSError: return
         d = os.path.dirname(d)
-def purge_holding(c, now=None):
-    """Delete what has waited HOLD_DAYS in the holding bin, but only a file that is still the one that went in. Returns (files, bytes)."""
+def purge_holding(c, now=None, everything=False):
+    """Delete what has waited HOLD_DAYS in the holding bin, but only a file that is still the one that went in. Returns (files, bytes).
+    everything=True is 'Delete all now' on the Actions tab: every file in the bin goes at once, its days left or not."""
     now = now or time.time(); n = b = 0
-    for r in c.execute("SELECT * FROM held WHERE restored IS NULL AND purged IS NULL AND at < ?", (now - HOLD_DAYS * 86400,)).fetchall():
+    for r in c.execute("SELECT * FROM held WHERE restored IS NULL AND purged IS NULL AND at < ?", (now + 1 if everything else now - HOLD_DAYS * 86400,)).fetchall():
         try: st = os.lstat(r["held"])
         except FileNotFoundError: c.execute("UPDATE held SET purged=?, note=? WHERE id=?", (now, "already gone from the bin", r["id"])); continue
         if (st.st_ino, st.st_size) != (r["ino"], r["size"]): c.execute("UPDATE held SET note=? WHERE id=?", ("left alone: not the file that went in", r["id"])); continue
         try: os.remove(r["held"])
         except OSError as e: note_error(f"holding bin: could not delete {r['held']}: {e}"); continue
         c.execute("UPDATE held SET purged=? WHERE id=?", (now, r["id"])); n += 1; b += r["size"]; tidy_holding(os.path.dirname(r["held"]))
-        record_action(c, "on", "purge", r["orig"], f"{HOLD_DAYS} days in the holding bin ran out", f"deleted, {human(r['size'])} back")
+        record_action(c, "on", "purge", r["orig"], "you emptied the holding bin" if everything else f"{HOLD_DAYS} days in the holding bin ran out", f"deleted, {human(r['size'])} back")
     c.commit()
-    if n: log(f"holding bin: {n} file(s) past {HOLD_DAYS} days deleted, {human(b)} back")
+    if n: log(f"holding bin: {n} file(s) deleted by 'Delete all now', {human(b)} back" if everything else f"holding bin: {n} file(s) past {HOLD_DAYS} days deleted, {human(b)} back")
     return n, b
+def ui_purge(c, sure):
+    """POST /api/purge: empty the holding bin now. This is the one button that deletes, so it needs sure=true and never runs beside a scan. Returns (code, obj)."""
+    if sure is not True: return 400, {"error": "this deletes every file in the holding bin for good; send sure=true to say you mean it"}
+    if SCANNING["on"]: return 409, {"error": "a scan is running; try again in a minute, so nothing is deleted while the scan reads the disk"}
+    waiting = len(holding(c)["items"])
+    if not waiting: return 200, {"ok": True, "done": 0, "frees": 0, "frees_h": human(0), "left": 0, "note": "The holding bin is already empty."}
+    n, b = purge_holding(c, everything=True); left = len(holding(c)["items"])
+    note = f"Deleted {n} file{'s' if n != 1 else ''} from the holding bin for good. {human(b)} is free again." if n else "Nothing was deleted."
+    if left: note += f" {left} {'was' if left == 1 else 'were'} left alone; the reason is on each row."
+    return 200, {"ok": True, "done": n, "frees": b, "frees_h": human(b), "left": left, "note": note}
 def holding(c, now=None):
     now = now or time.time(); out = []
     for r in c.execute("SELECT * FROM held WHERE restored IS NULL AND purged IS NULL ORDER BY at DESC").fetchall():
@@ -1978,6 +1989,12 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception as e: note_error(f"move all failed: {e!r}"); return self._json(500, {"error": f"the move stopped with an error and is written on the About tab: {e}"})
                 finally: c.close()
                 if code == 200: log(f"fix all -> {obj['done']} moved, {len(obj['skipped'])} left alone")
+                return self._json(code, obj)
+            if p == "/api/purge":
+                c = db()
+                try: code, obj = ui_purge(c, body.get("sure"))
+                except Exception as e: note_error(f"emptying the holding bin failed: {e!r}"); return self._json(500, {"error": f"it stopped with an error and is written on the About tab: {e}"})
+                finally: c.close()
                 return self._json(code, obj)
             if p == "/api/restore":
                 try: hid = int(body.get("id"))
