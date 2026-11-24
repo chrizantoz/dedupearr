@@ -101,6 +101,7 @@ Out of the box the page is open to whoever can reach the port, which at home mea
 
 - **No sign-in at home, sign-in through your domain:** tick **No sign-in on my own network** under the password (or set `LOCAL_NO_LOGIN=1`). A browser on your own network (or tailnet) that opens the address and port directly gets straight in; anything that arrives through a reverse proxy, tunnel or CDN (it adds `X-Forwarded-For` or a similar header) is always asked, even though the proxy itself sits on your network. Leave it off if your router forwards the port straight to Dedupearr: some routers make every outside visitor look like they are at home.
 - **Already behind Authelia or Authentik:** `TRUST_PROXY_AUTH=1` lets their `Remote-User` header count as the sign-in, so you log in once.
+- **Auditarr's morning message with sign-in on:** set the same long random text as `DIGEST_KEY` here and as **Dedupearr key** in Auditarr's Settings. Auditarr sends it to read the daily summary; it opens that one address and nothing else.
 
 ## 🛡️ Is it safe? (yes: nothing is deleted outright)
 
@@ -143,6 +144,7 @@ Everything below can be set on the container. Most of it can also be set on the 
 | `AUTH_USER`, `AUTH_PASSWORD` | empty | Turn the sign-in on from the container (wins over the password set on the About tab) |
 | `LOCAL_NO_LOGIN` | empty | empty = the About tab decides; `1` = no sign-in for a browser on your own network talking to the port directly; through a domain it still asks |
 | `TRUST_PROXY_AUTH` | `0` | `1` = a reverse proxy's `Remote-User` header counts as signed in |
+| `DIGEST_KEY` | empty | a shared key (16 characters or more) that lets Auditarr read the daily summary at `/api/digest` while sign-in is on; Auditarr sends it as `X-Digest-Key` |
 | `PORT` | `3092` | Web port |
 
 ## 🧑‍💻 For developers

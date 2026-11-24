@@ -1532,9 +1532,15 @@ def send_digest(c=None):
 # (the env wins). With an account the page asks for a sign-in, except: the container itself, a proxy's Remote-User header when
 # TRUST_PROXY_AUTH=1, and with "no sign-in on my own network" (About tab or LOCAL_NO_LOGIN=1) a browser on your own network that
 # talks to the port directly (no reverse-proxy headers), so the domain asks and the home address does not.
+# One more door, for a machine: DIGEST_KEY lets Auditarr read /api/digest (and only that) with the key in a header (#39).
 AUTH_USER, AUTH_PASSWORD = _env("AUTH_USER"), os.environ.get("AUTH_PASSWORD", "")
 TRUST_PROXY_AUTH = _env("TRUST_PROXY_AUTH", "0") == "1"
 LOCAL_NO_LOGIN_ENV = _env("LOCAL_NO_LOGIN", "")   # 1 / 0 = set on the container and wins; empty = the About tab decides
+DIGEST_KEY = os.environ.get("DIGEST_KEY", "").strip()   # #39: a key Auditarr sends as X-Digest-Key to read /api/digest (the morning summary) while sign-in is on. That one address, nothing else
+def digest_key_ok(path, headers):
+    """True only for /api/digest with the right X-Digest-Key. A key under 16 characters is too easy to guess and counts as not set."""
+    import hmac
+    return len(DIGEST_KEY) >= 16 and path == "/api/digest" and hmac.compare_digest((headers.get("X-Digest-Key") or "").encode(), DIGEST_KEY.encode())
 PROXY_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "Forwarded", "CF-Connecting-IP", "CF-Ray", "True-Client-IP", "Via", "Tailscale-Funnel-Request")
 ROUTER_WARNING = "Only for a page your visitors reach from outside through a reverse proxy or tunnel (Nginx Proxy Manager, SWAG, Traefik, Caddy, Cloudflare Tunnel). If your router forwards this port straight to the app, leave it off: some routers make every outside visitor look like they are at home."
 AUTH_CACHE = {}
@@ -1883,6 +1889,7 @@ class Handler(SimpleHTTPRequestHandler):
             if p == "/login": return self._login_page()
             if p == "/logout": return self._redirect("login", "dedupearr_s=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
             who = self._auth() if p != "/health" else ""
+            if who is None and digest_key_ok(p, self.headers): who = "digest"   # #39: Auditarr with the shared key, for the summary only
             if who is None: return self._json(401, {"error": "sign in first"}) if p.startswith("/api/") else self._redirect("login")
             if p in ("/", "/index.html"):
                 b = open(UI_PATH, "rb").read(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")

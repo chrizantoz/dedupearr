@@ -58,6 +58,18 @@ cookie = (h.get("Set-Cookie") or "").split(";")[0]; check("the right password se
 st, h, b = req("/api/state", headers={"Cookie": cookie}); j = json.loads(b) if st == 200 else {}
 check("with the cookie the page loads and knows sign-in is on", st == 200 and j.get("auth", {}).get("enabled") is True and j["auth"]["via"] == "" and j["auth"]["source"] == "env" and "router" in j["auth"]["warning"], (st, j.get("auth")))
 st, h, b = req("/logout", headers={"Cookie": cookie}); check("Sign out clears the cookie", st == 303 and "Max-Age=0" in h.get("Set-Cookie", ""), h.get("Set-Cookie"))
+# ---- #39 (2026-11-24): with sign-in on, Auditarr's morning call to /api/digest got 401 and the phone message lost Dedupearr's lines. DIGEST_KEY opens that one address to the key
+st, h, b = req("/api/digest"); check("sign-in on, no key set: the summary is refused to a stranger", st == 401, st)
+st, h, b = req("/api/digest", headers={"X-Digest-Key": ""}); check("no key set: an empty key header opens nothing", st == 401, st)
+d.DIGEST_KEY = "k" * 32
+st, h, b = req("/api/digest", headers={"X-Digest-Key": "k" * 32}); check("DIGEST_KEY: the right key reads the summary through sign-in", st == 200 and "lines" in json.loads(b), (st, b[:80]))
+st, h, b = req("/api/digest", headers={"X-Digest-Key": "k" * 31 + "x"}); check("DIGEST_KEY: a wrong key is refused", st == 401, st)
+st, h, b = req("/api/digest"); check("DIGEST_KEY: no key header is refused", st == 401, st)
+for p_ in ("/api/state", "/api/about", "/api/settings", "/api/actions", "/"):
+    st, h, b = req(p_, headers={"X-Digest-Key": "k" * 32}); check(f"DIGEST_KEY: the key opens nothing else ({p_})", st in (401, 303), st)
+st, h, b = req("/api/ignore", json_body={"path": "/x"}, headers={"X-Digest-Key": "k" * 32}); check("DIGEST_KEY: the key cannot write", st == 401, st)
+d.DIGEST_KEY = "short"; st, h, b = req("/api/digest", headers={"X-Digest-Key": "short"}); check("a key under 16 characters counts as not set", st == 401, st)
+d.DIGEST_KEY = ""
 # ---- the page account (About tab): no env account, the password is set from the page
 d.AUTH_USER, d.AUTH_PASSWORD = "", ""
 def lan(p, body, headers=None):   # a direct request from 127.0.0.1 with no proxy header = your own network
